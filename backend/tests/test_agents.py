@@ -1,4 +1,4 @@
-"""T2.1 单元测试: BaseAgent + AgentManager
+"""T2.1 + T2.3 单元测试: BaseAgent + AgentManager + make_decision
 
 测试覆盖:
 - BaseAgent 初始化与配置
@@ -6,6 +6,11 @@
 - LLM 响应解析（JSON 正常解析、容错、降级）
 - LLM 调用（mock）
 - AgentManager 生命周期管理
+- T2.3: make_decision 完整决策流程
+- T2.3: 决策上下文格式化函数
+- T2.3: 比牌目标验证与自动选择
+- T2.3: LLM 失败降级处理
+- T2.3: 非法操作降级处理
 """
 
 from __future__ import annotations
@@ -20,9 +25,25 @@ from app.agents.base_agent import (
     Decision,
     LLMCallError,
     ThoughtData,
+    format_hand_description,
+    format_players_status,
+    format_action_history,
+    format_chat_history,
+    format_available_actions,
 )
 from app.agents.agent_manager import AgentManager, get_agent_manager
-from app.models.game import GameAction
+from app.models.game import (
+    ActionRecord,
+    GameAction,
+    GameConfig,
+    GamePhase,
+    GameState,
+    Player,
+    PlayerStatus,
+    PlayerType,
+    RoundState,
+)
+from app.models.card import Card, Rank, Suit
 
 
 # ============================================================
@@ -779,3 +800,914 @@ class TestDecisionFlow:
                 available = [GameAction.CALL, GameAction.FOLD]
                 fallback = agent._get_fallback_action(available)
                 assert fallback == GameAction.CALL
+
+
+# ============================================================
+# T2.3: 决策上下文格式化函数
+# ============================================================
+
+
+def _make_card(suit: Suit, rank: Rank) -> Card:
+    """快速创建一张牌"""
+    return Card(suit=suit, rank=rank)
+
+
+def _make_player(
+    name: str,
+    player_id: str = "",
+    chips: int = 1000,
+    status: PlayerStatus = PlayerStatus.ACTIVE_BLIND,
+    player_type: PlayerType = PlayerType.AI,
+    hand: list[Card] | None = None,
+    total_bet: int = 10,
+) -> Player:
+    """快速创建一个玩家"""
+    return Player(
+        id=player_id or f"player-{name}",
+        name=name,
+        player_type=player_type,
+        chips=chips,
+        status=status,
+        hand=hand,
+        total_bet_this_round=total_bet,
+    )
+
+
+def _make_game_state(
+    players: list[Player] | None = None,
+    round_number: int = 1,
+    pot: int = 30,
+    current_bet: int = 10,
+    current_player_index: int = 0,
+    phase: GamePhase = GamePhase.BETTING,
+    actions: list[ActionRecord] | None = None,
+) -> GameState:
+    """快速创建一个游戏状态"""
+    if players is None:
+        hand_p1 = [
+            _make_card(Suit.HEARTS, Rank.KING),
+            _make_card(Suit.SPADES, Rank.KING),
+            _make_card(Suit.DIAMONDS, Rank.THREE),
+        ]
+        hand_p2 = [
+            _make_card(Suit.CLUBS, Rank.ACE),
+            _make_card(Suit.HEARTS, Rank.ACE),
+            _make_card(Suit.SPADES, Rank.SEVEN),
+        ]
+        hand_p3 = [
+            _make_card(Suit.DIAMONDS, Rank.FIVE),
+            _make_card(Suit.CLUBS, Rank.SIX),
+            _make_card(Suit.HEARTS, Rank.SEVEN),
+        ]
+        players = [
+            _make_player("玩家A", "p1", hand=hand_p1, status=PlayerStatus.ACTIVE_SEEN),
+            _make_player("玩家B", "p2", hand=hand_p2),
+            _make_player("玩家C", "p3", hand=hand_p3),
+        ]
+
+    round_state = RoundState(
+        round_number=round_number,
+        pot=pot,
+        current_bet=current_bet,
+        dealer_index=0,
+        current_player_index=current_player_index,
+        phase=phase,
+        actions=actions or [],
+    )
+
+    return GameState(
+        game_id="test-game",
+        players=players,
+        current_round=round_state,
+        config=GameConfig(),
+        status="playing",
+    )
+
+
+class TestFormatHandDescription:
+    """手牌描述格式化测试"""
+
+    def test_seen_hand_with_pair(self):
+        hand = [
+            _make_card(Suit.HEARTS, Rank.KING),
+            _make_card(Suit.SPADES, Rank.KING),
+            _make_card(Suit.DIAMONDS, Rank.THREE),
+        ]
+        desc = format_hand_description(hand, has_seen=True)
+        assert "红心K" in desc
+        assert "黑桃K" in desc
+        assert "方块3" in desc
+        assert "对K" in desc
+
+    def test_seen_hand_with_straight(self):
+        hand = [
+            _make_card(Suit.HEARTS, Rank.FIVE),
+            _make_card(Suit.SPADES, Rank.SIX),
+            _make_card(Suit.DIAMONDS, Rank.SEVEN),
+        ]
+        desc = format_hand_description(hand, has_seen=True)
+        assert "顺子" in desc
+
+    def test_unseen_hand(self):
+        hand = [
+            _make_card(Suit.HEARTS, Rank.ACE),
+            _make_card(Suit.SPADES, Rank.KING),
+            _make_card(Suit.DIAMONDS, Rank.QUEEN),
+        ]
+        desc = format_hand_description(hand, has_seen=False)
+        assert "未知" in desc
+        assert "还没有看牌" in desc
+
+    def test_none_hand(self):
+        desc = format_hand_description(None, has_seen=False)
+        assert "未知" in desc
+        assert "未发牌" in desc
+
+
+class TestFormatPlayersStatus:
+    """玩家状态格式化测试"""
+
+    def test_basic_status(self):
+        players = [
+            _make_player("玩家A", "p1", status=PlayerStatus.ACTIVE_SEEN),
+            _make_player("玩家B", "p2", status=PlayerStatus.ACTIVE_BLIND),
+            _make_player("玩家C", "p3", status=PlayerStatus.FOLDED),
+        ]
+        round_state = RoundState(round_number=1, current_player_index=0)
+        text = format_players_status(players, "p1", round_state)
+        assert "玩家A（你）" in text
+        assert "明注（已看牌）" in text
+        assert "暗注（未看牌）" in text
+        assert "已弃牌" in text
+        assert "当前行动" in text
+
+    def test_out_status(self):
+        players = [
+            _make_player("玩家A", "p1"),
+            _make_player("玩家D", "p4", status=PlayerStatus.OUT, chips=0),
+        ]
+        round_state = RoundState(round_number=1, current_player_index=0)
+        text = format_players_status(players, "p1", round_state)
+        assert "已出局" in text
+
+
+class TestFormatActionHistory:
+    """行动历史格式化测试"""
+
+    def test_empty_history(self):
+        text = format_action_history([])
+        assert "尚无行动记录" in text
+
+    def test_with_actions(self):
+        actions = [
+            ActionRecord(player_id="p1", player_name="玩家A", action=GameAction.CALL, amount=10),
+            ActionRecord(player_id="p2", player_name="玩家B", action=GameAction.RAISE, amount=20),
+            ActionRecord(player_id="p3", player_name="玩家C", action=GameAction.FOLD),
+        ]
+        text = format_action_history(actions)
+        assert "玩家A" in text
+        assert "跟注" in text
+        assert "10 筹码" in text
+        assert "玩家B" in text
+        assert "加注" in text
+        assert "20 筹码" in text
+        assert "玩家C" in text
+        assert "弃牌" in text
+
+    def test_compare_action_with_target(self):
+        actions = [
+            ActionRecord(
+                player_id="p1",
+                player_name="玩家A",
+                action=GameAction.COMPARE,
+                amount=20,
+                target_id="p2",
+            ),
+        ]
+        text = format_action_history(actions)
+        assert "比牌" in text
+        assert "p2" in text
+
+
+class TestFormatChatHistory:
+    """聊天记录格式化测试"""
+
+    def test_empty_chat(self):
+        text = format_chat_history(None)
+        assert "暂无聊天记录" in text
+
+    def test_empty_list(self):
+        text = format_chat_history([])
+        assert "暂无聊天记录" in text
+
+    def test_with_messages(self):
+        chat = [
+            {"sender": "玩家A", "message": "我牌很好"},
+            {"sender": "玩家B", "message": "别吹了"},
+        ]
+        text = format_chat_history(chat)
+        assert "玩家A: 我牌很好" in text
+        assert "玩家B: 别吹了" in text
+
+
+class TestFormatAvailableActions:
+    """可用操作格式化测试"""
+
+    def test_blind_player_actions(self):
+        player = _make_player("玩家A", "p1", status=PlayerStatus.ACTIVE_BLIND)
+        round_state = RoundState(round_number=1, current_bet=10)
+        actions = [GameAction.FOLD, GameAction.CALL, GameAction.CHECK_CARDS, GameAction.RAISE]
+        text = format_available_actions(actions, round_state, player, [player])
+        assert "弃牌" in text
+        assert "跟注" in text
+        assert "看牌" in text
+        assert "加注" in text
+        assert "无费用" in text
+        assert "费用:" in text
+
+    def test_seen_player_with_compare(self):
+        player = _make_player("玩家A", "p1", status=PlayerStatus.ACTIVE_SEEN, chips=500)
+        opponent = _make_player("玩家B", "p2", status=PlayerStatus.ACTIVE_BLIND)
+        round_state = RoundState(round_number=1, current_bet=10)
+        actions = [GameAction.FOLD, GameAction.CALL, GameAction.RAISE, GameAction.COMPARE]
+        text = format_available_actions(actions, round_state, player, [player, opponent])
+        assert "比牌" in text
+        assert "可比对象" in text
+        assert "玩家B" in text
+
+
+# ============================================================
+# T2.3: make_decision 完整决策流程测试
+# ============================================================
+
+
+def _mock_llm_response(
+    action: str = "call",
+    target: str | None = None,
+    table_talk: str | None = None,
+    thought: dict | None = None,
+) -> str:
+    """生成 mock LLM 响应 JSON"""
+    return json.dumps(
+        {
+            "action": action,
+            "target": target,
+            "table_talk": table_talk,
+            "thought": thought
+            or {
+                "hand_evaluation": "中等牌力",
+                "opponent_analysis": "对手行为正常",
+                "reasoning": "跟注是合理的",
+                "confidence": 0.6,
+                "emotion": "平静",
+            },
+        }
+    )
+
+
+def _patch_llm(response_content: str):
+    """创建 mock LLM 的 patch context"""
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = response_content
+    return mock_response
+
+
+class TestMakeDecision:
+    """T2.3: make_decision 完整流程测试"""
+
+    @pytest.mark.asyncio
+    async def test_make_decision_call(self):
+        """正常决策流程：AI 选择跟注"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="analytical")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        llm_response = _mock_llm_response(
+            action="call",
+            table_talk="概率分析后跟注",
+            thought={
+                "hand_evaluation": "一对K，牌力不错",
+                "opponent_analysis": "玩家B可能在诈唬",
+                "reasoning": "底池赔率划算",
+                "confidence": 0.7,
+                "emotion": "冷静",
+            },
+        )
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+
+            decision = await agent.make_decision(game, player)
+
+            assert decision.action == GameAction.CALL
+            assert decision.table_talk == "概率分析后跟注"
+            assert decision.thought is not None
+            assert decision.thought.confidence == 0.7
+            assert decision.thought.emotion == "冷静"
+
+            # 验证思考数据已记录
+            thoughts = agent.get_round_thoughts(1)
+            assert len(thoughts) == 1
+            assert thoughts[0].hand_evaluation == "一对K，牌力不错"
+
+    @pytest.mark.asyncio
+    async def test_make_decision_fold(self):
+        """AI 选择弃牌"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="conservative")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        llm_response = _mock_llm_response(action="fold", table_talk=None)
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+            decision = await agent.make_decision(game, player)
+            assert decision.action == GameAction.FOLD
+            assert decision.table_talk is None
+
+    @pytest.mark.asyncio
+    async def test_make_decision_raise(self):
+        """AI 选择加注"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="aggressive")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        llm_response = _mock_llm_response(
+            action="raise",
+            table_talk="你确定要跟？",
+        )
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+            decision = await agent.make_decision(game, player)
+            assert decision.action == GameAction.RAISE
+            assert decision.table_talk == "你确定要跟？"
+
+    @pytest.mark.asyncio
+    async def test_make_decision_check_cards_blind(self):
+        """暗注玩家选择看牌"""
+        agent = BaseAgent(agent_id="p2", name="玩家B", personality="conservative")
+        game = _make_game_state(current_player_index=1)
+        player = game.players[1]
+        player.status = PlayerStatus.ACTIVE_BLIND
+
+        llm_response = _mock_llm_response(action="check_cards")
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+            decision = await agent.make_decision(game, player)
+            assert decision.action == GameAction.CHECK_CARDS
+
+    @pytest.mark.asyncio
+    async def test_make_decision_compare_with_valid_target(self):
+        """AI 选择比牌，指定合法目标"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="aggressive")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        llm_response = _mock_llm_response(
+            action="compare",
+            target="p2",
+            table_talk="来比一比！",
+        )
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+            decision = await agent.make_decision(game, player)
+            assert decision.action == GameAction.COMPARE
+            assert decision.target == "p2"
+
+    @pytest.mark.asyncio
+    async def test_make_decision_compare_auto_select_target(self):
+        """AI 选择比牌但未指定目标，自动选择筹码最少的对手"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="aggressive")
+        players = [
+            _make_player(
+                "玩家A",
+                "p1",
+                chips=800,
+                status=PlayerStatus.ACTIVE_SEEN,
+                hand=[
+                    _make_card(Suit.HEARTS, Rank.KING),
+                    _make_card(Suit.SPADES, Rank.KING),
+                    _make_card(Suit.DIAMONDS, Rank.THREE),
+                ],
+            ),
+            _make_player(
+                "玩家B",
+                "p2",
+                chips=500,
+                hand=[
+                    _make_card(Suit.CLUBS, Rank.ACE),
+                    _make_card(Suit.HEARTS, Rank.ACE),
+                    _make_card(Suit.SPADES, Rank.SEVEN),
+                ],
+            ),
+            _make_player(
+                "玩家C",
+                "p3",
+                chips=200,
+                hand=[
+                    _make_card(Suit.DIAMONDS, Rank.FIVE),
+                    _make_card(Suit.CLUBS, Rank.SIX),
+                    _make_card(Suit.HEARTS, Rank.SEVEN),
+                ],
+            ),
+        ]
+        game = _make_game_state(players=players)
+
+        llm_response = _mock_llm_response(action="compare", target=None)
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+            decision = await agent.make_decision(game, players[0])
+            assert decision.action == GameAction.COMPARE
+            # 应自动选择筹码最少的玩家C
+            assert decision.target == "p3"
+
+    @pytest.mark.asyncio
+    async def test_make_decision_compare_invalid_target_auto_select(self):
+        """AI 比牌指定了无效目标，自动重选"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="aggressive")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        # 指定一个不存在的目标
+        llm_response = _mock_llm_response(action="compare", target="nonexistent-id")
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+            decision = await agent.make_decision(game, player)
+            assert decision.action == GameAction.COMPARE
+            # 应自动选择一个合法目标
+            assert decision.target in ["p2", "p3"]
+
+    @pytest.mark.asyncio
+    async def test_make_decision_compare_target_folded_auto_select(self):
+        """AI 比牌指定了已弃牌的目标，自动重选"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="aggressive")
+        players = [
+            _make_player(
+                "玩家A",
+                "p1",
+                status=PlayerStatus.ACTIVE_SEEN,
+                hand=[
+                    _make_card(Suit.HEARTS, Rank.KING),
+                    _make_card(Suit.SPADES, Rank.KING),
+                    _make_card(Suit.DIAMONDS, Rank.THREE),
+                ],
+            ),
+            _make_player(
+                "玩家B",
+                "p2",
+                status=PlayerStatus.FOLDED,
+                hand=[
+                    _make_card(Suit.CLUBS, Rank.ACE),
+                    _make_card(Suit.HEARTS, Rank.ACE),
+                    _make_card(Suit.SPADES, Rank.SEVEN),
+                ],
+            ),
+            _make_player(
+                "玩家C",
+                "p3",
+                status=PlayerStatus.ACTIVE_BLIND,
+                hand=[
+                    _make_card(Suit.DIAMONDS, Rank.FIVE),
+                    _make_card(Suit.CLUBS, Rank.SIX),
+                    _make_card(Suit.HEARTS, Rank.SEVEN),
+                ],
+            ),
+        ]
+        game = _make_game_state(players=players)
+
+        llm_response = _mock_llm_response(action="compare", target="p2")
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+            decision = await agent.make_decision(game, players[0])
+            assert decision.action == GameAction.COMPARE
+            # p2 已弃牌，应自动选择 p3
+            assert decision.target == "p3"
+
+
+class TestMakeDecisionIllegalActionFallback:
+    """T2.3: 非法操作降级测试"""
+
+    @pytest.mark.asyncio
+    async def test_illegal_action_fallback_to_call(self):
+        """LLM 返回不在可用列表中的操作，降级为跟注"""
+        agent = BaseAgent(agent_id="p2", name="玩家B", personality="analytical")
+        game = _make_game_state(current_player_index=1)
+        player = game.players[1]
+        player.status = PlayerStatus.ACTIVE_BLIND
+
+        # LLM 返回 compare，但暗注玩家不能比牌
+        llm_response = _mock_llm_response(action="compare", target="p1")
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+            decision = await agent.make_decision(game, player)
+            # compare 不在暗注玩家的可用操作中，应降级
+            assert decision.action != GameAction.COMPARE
+            assert decision.action in [
+                GameAction.CALL,
+                GameAction.FOLD,
+                GameAction.CHECK_CARDS,
+                GameAction.RAISE,
+            ]
+
+    @pytest.mark.asyncio
+    async def test_illegal_check_cards_when_already_seen(self):
+        """已看牌玩家不能再次看牌"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="analytical")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        llm_response = _mock_llm_response(action="check_cards")
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+            decision = await agent.make_decision(game, player)
+            assert decision.action != GameAction.CHECK_CARDS
+
+
+class TestMakeDecisionLLMFailure:
+    """T2.3: LLM 调用失败降级测试"""
+
+    @pytest.mark.asyncio
+    async def test_llm_failure_fallback(self):
+        """LLM 调用失败时降级为安全操作"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="analytical")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.side_effect = Exception("API down")
+
+            with patch("app.agents.base_agent.get_settings") as mock_settings:
+                settings = MagicMock()
+                settings.llm_temperature = 0.7
+                settings.llm_timeout = 5
+                settings.llm_max_retries = 1
+                settings.openai_api_key = ""
+                settings.anthropic_api_key = ""
+                settings.google_api_key = ""
+                mock_settings.return_value = settings
+
+                decision = await agent.make_decision(game, player)
+
+                # 应降级为 CALL（最安全的操作）
+                assert decision.action == GameAction.CALL
+                assert decision.thought is not None
+                assert "失败" in decision.thought.reasoning or "降级" in decision.thought.reasoning
+                assert decision.thought.confidence == 0.0
+
+    @pytest.mark.asyncio
+    async def test_llm_failure_fallback_fold_when_no_call(self):
+        """LLM 失败且筹码不足跟注时，降级为弃牌"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="conservative")
+        players = [
+            _make_player(
+                "玩家A",
+                "p1",
+                chips=0,
+                status=PlayerStatus.ACTIVE_SEEN,
+                hand=[
+                    _make_card(Suit.HEARTS, Rank.KING),
+                    _make_card(Suit.SPADES, Rank.KING),
+                    _make_card(Suit.DIAMONDS, Rank.THREE),
+                ],
+            ),
+            _make_player(
+                "玩家B",
+                "p2",
+                chips=500,
+                hand=[
+                    _make_card(Suit.CLUBS, Rank.ACE),
+                    _make_card(Suit.HEARTS, Rank.ACE),
+                    _make_card(Suit.SPADES, Rank.SEVEN),
+                ],
+            ),
+        ]
+        game = _make_game_state(players=players)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.side_effect = Exception("API down")
+
+            with patch("app.agents.base_agent.get_settings") as mock_settings:
+                settings = MagicMock()
+                settings.llm_temperature = 0.7
+                settings.llm_timeout = 5
+                settings.llm_max_retries = 1
+                settings.openai_api_key = ""
+                settings.anthropic_api_key = ""
+                settings.google_api_key = ""
+                mock_settings.return_value = settings
+
+                decision = await agent.make_decision(game, players[0])
+                assert decision.action == GameAction.FOLD
+
+
+class TestMakeDecisionWithContext:
+    """T2.3: make_decision 上下文注入测试"""
+
+    @pytest.mark.asyncio
+    async def test_chat_context_included_in_prompt(self):
+        """验证聊天上下文被传入 LLM"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="analytical")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        chat_context = [
+            {"sender": "玩家B", "message": "我牌超好的！"},
+            {"sender": "玩家C", "message": "别信他"},
+        ]
+
+        llm_response = _mock_llm_response(action="call")
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+
+            decision = await agent.make_decision(game, player, chat_context=chat_context)
+            assert decision.action == GameAction.CALL
+
+            # 验证 LLM 被调用，且 messages 包含聊天上下文
+            call_args = mock_llm.call_args
+            messages = call_args.kwargs["messages"]
+            user_prompt = messages[1]["content"]
+            assert "我牌超好的" in user_prompt
+            assert "别信他" in user_prompt
+
+    @pytest.mark.asyncio
+    async def test_experience_context_included_in_prompt(self):
+        """验证经验策略上下文被传入 LLM"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="analytical")
+        agent.set_strategy_context("对手B喜欢诈唬，应该更多跟注")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        llm_response = _mock_llm_response(action="call")
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+
+            decision = await agent.make_decision(game, player)
+
+            call_args = mock_llm.call_args
+            messages = call_args.kwargs["messages"]
+            user_prompt = messages[1]["content"]
+            assert "对手B喜欢诈唬" in user_prompt
+
+    @pytest.mark.asyncio
+    async def test_action_history_included_in_prompt(self):
+        """验证行动历史被传入 LLM"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="analytical")
+        actions = [
+            ActionRecord(player_id="p2", player_name="玩家B", action=GameAction.RAISE, amount=20),
+            ActionRecord(player_id="p3", player_name="玩家C", action=GameAction.FOLD),
+        ]
+        game = _make_game_state(actions=actions)
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        llm_response = _mock_llm_response(action="call")
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+
+            decision = await agent.make_decision(game, player)
+
+            call_args = mock_llm.call_args
+            messages = call_args.kwargs["messages"]
+            user_prompt = messages[1]["content"]
+            assert "玩家B" in user_prompt
+            assert "加注" in user_prompt
+            assert "玩家C" in user_prompt
+            assert "弃牌" in user_prompt
+
+    @pytest.mark.asyncio
+    async def test_blind_player_hand_not_revealed(self):
+        """暗注玩家的手牌描述应为'未知'"""
+        agent = BaseAgent(agent_id="p2", name="玩家B", personality="analytical")
+        game = _make_game_state(current_player_index=1)
+        player = game.players[1]
+        player.status = PlayerStatus.ACTIVE_BLIND
+
+        llm_response = _mock_llm_response(action="call")
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+
+            decision = await agent.make_decision(game, player)
+
+            call_args = mock_llm.call_args
+            messages = call_args.kwargs["messages"]
+            user_prompt = messages[1]["content"]
+            assert "未知" in user_prompt
+            assert "还没有看牌" in user_prompt
+
+    @pytest.mark.asyncio
+    async def test_available_actions_with_costs_in_prompt(self):
+        """验证可用操作及费用信息被传入 LLM"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="analytical")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        llm_response = _mock_llm_response(action="call")
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+
+            decision = await agent.make_decision(game, player)
+
+            call_args = mock_llm.call_args
+            messages = call_args.kwargs["messages"]
+            user_prompt = messages[1]["content"]
+            # 明注跟注费用 = current_bet * 2 = 20
+            assert "费用" in user_prompt
+            assert "筹码" in user_prompt
+
+
+class TestMakeDecisionThoughtRecording:
+    """T2.3: 思考数据记录测试"""
+
+    @pytest.mark.asyncio
+    async def test_thought_recorded_after_decision(self):
+        """决策后思考数据应被记录到 memory"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="analytical")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        llm_response = _mock_llm_response(
+            action="call",
+            thought={
+                "hand_evaluation": "一对K，中上牌力",
+                "opponent_analysis": "对手B加注频率高",
+                "reasoning": "值得跟注",
+                "confidence": 0.75,
+                "emotion": "自信",
+            },
+        )
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+            decision = await agent.make_decision(game, player)
+
+            # 检查思考数据已被记录
+            thoughts = agent.get_round_thoughts(1)
+            assert len(thoughts) == 1
+            assert thoughts[0].hand_evaluation == "一对K，中上牌力"
+            assert thoughts[0].confidence == 0.75
+
+    @pytest.mark.asyncio
+    async def test_multiple_decisions_accumulate_thoughts(self):
+        """同一局多次决策应累积思考数据"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="analytical")
+
+        for i in range(3):
+            game = _make_game_state()
+            player = game.players[0]
+            player.status = PlayerStatus.ACTIVE_SEEN
+
+            llm_response = _mock_llm_response(
+                action="call",
+                thought={"reasoning": f"第{i + 1}次决策", "confidence": 0.5 + i * 0.1},
+            )
+            mock_resp = _patch_llm(llm_response)
+
+            with patch(
+                "app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock
+            ) as mock_llm:
+                mock_llm.return_value = mock_resp
+                await agent.make_decision(game, player)
+
+        thoughts = agent.get_round_thoughts(1)
+        assert len(thoughts) == 3
+        assert thoughts[0].reasoning == "第1次决策"
+        assert thoughts[2].reasoning == "第3次决策"
+
+    @pytest.mark.asyncio
+    async def test_llm_failure_still_records_thought(self):
+        """LLM 失败时降级决策也应记录思考"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="analytical")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.side_effect = Exception("API down")
+
+            with patch("app.agents.base_agent.get_settings") as mock_settings:
+                settings = MagicMock()
+                settings.llm_temperature = 0.7
+                settings.llm_timeout = 5
+                settings.llm_max_retries = 1
+                settings.openai_api_key = ""
+                settings.anthropic_api_key = ""
+                settings.google_api_key = ""
+                mock_settings.return_value = settings
+
+                decision = await agent.make_decision(game, player)
+
+                thoughts = agent.get_round_thoughts(1)
+                assert len(thoughts) == 1
+                assert thoughts[0].confidence == 0.0
+
+
+class TestMakeDecisionEdgeCases:
+    """T2.3: make_decision 边界情况测试"""
+
+    @pytest.mark.asyncio
+    async def test_chinese_action_in_llm_response(self):
+        """LLM 返回中文操作名称"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="analytical")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        llm_response = json.dumps(
+            {
+                "action": "跟注",
+                "thought": {"reasoning": "跟注比较安全"},
+            }
+        )
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+            decision = await agent.make_decision(game, player)
+            assert decision.action == GameAction.CALL
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_response(self):
+        """LLM 返回格式不规范的 JSON（包含在文本中）"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="intuitive")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        # JSON 嵌套在文本中
+        llm_response = (
+            '我决定 ```json\n{"action": "raise", "thought": {"reasoning": "感觉不错"}}\n``` 就这样'
+        )
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+            decision = await agent.make_decision(game, player)
+            assert decision.action == GameAction.RAISE
+
+    @pytest.mark.asyncio
+    async def test_completely_unparseable_response(self):
+        """LLM 返回完全无法解析的响应"""
+        agent = BaseAgent(agent_id="p1", name="玩家A", personality="analytical")
+        game = _make_game_state()
+        player = game.players[0]
+        player.status = PlayerStatus.ACTIVE_SEEN
+
+        llm_response = "这是一段完全无关的文字，没有任何有用信息。天气真好。"
+        mock_resp = _patch_llm(llm_response)
+
+        with patch("app.agents.base_agent.litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_resp
+            decision = await agent.make_decision(game, player)
+            # 应降级到安全操作
+            assert decision.action in [GameAction.CALL, GameAction.FOLD]
+
+    @pytest.mark.asyncio
+    async def test_no_round_state_raises(self):
+        """没有 current_round 时应该 assert 失败"""
+        agent = BaseAgent(agent_id="p1", name="玩家A")
+        game = GameState(game_id="test", players=[], status="waiting")
+        player = _make_player("玩家A", "p1")
+
+        with pytest.raises(AssertionError):
+            await agent.make_decision(game, player)
