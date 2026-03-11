@@ -94,7 +94,7 @@
 - **验收**: 各模板渲染正确，变量替换无遗漏
 
 ### T2.3 AI 决策流程（make_decision 完整实现）
-- **状态**: `pending`
+- **状态**: `done`
 - **depends_on**: T2.1, T2.2, T1.3, T1.4
 - **内容**:
   - 在 `BaseAgent` 中实现完整的 `make_decision()`:

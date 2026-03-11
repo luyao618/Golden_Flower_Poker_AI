@@ -17,14 +17,31 @@ from typing import Any
 import litellm
 
 from app.config import AI_MODELS, get_settings
-from app.models.game import GameAction
+from app.models.game import (
+    ActionRecord,
+    GameAction,
+    GameConfig,
+    GameState,
+    Player,
+    PlayerStatus,
+    RoundState,
+)
+from app.models.card import Card
+from app.engine.evaluator import evaluate_hand
+from app.engine.rules import (
+    get_available_actions,
+    get_call_cost,
+    get_raise_cost,
+    get_compare_cost,
+    validate_action,
+)
 from app.agents.personalities import (
     PersonalityProfile,
     get_personality,
     get_personality_description_for_prompt,
     PERSONALITY_PROFILES,
 )
-from app.agents.prompts import render_system_prompt
+from app.agents.prompts import render_system_prompt, render_decision_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -310,6 +327,168 @@ class BaseAgent:
         decision.raw_response = raw_response
         return decision
 
+    # ---- 决策流程 ----
+
+    async def make_decision(
+        self,
+        game: GameState,
+        player: Player,
+        chat_context: list[dict[str, str]] | None = None,
+    ) -> Decision:
+        """完整的 AI 决策流程
+
+        流程：
+        1. 构建决策 prompt（手牌、局面、历史行动、聊天上下文、经验策略）
+        2. 调用 LLM
+        3. 解析响应为 Decision（action + thought + table_talk）
+        4. 验证操作合法性，非法操作降级处理
+        5. 比牌操作时验证/选择目标
+
+        Args:
+            game: 当前完整游戏状态
+            player: 本 Agent 对应的玩家对象
+            chat_context: 本局聊天记录列表，每条为 {"sender": ..., "message": ...}
+
+        Returns:
+            Decision 对象，包含 action、target、table_talk 和 thought
+        """
+        round_state = game.current_round
+        assert round_state is not None
+
+        # 1. 获取可用操作
+        available_actions = get_available_actions(round_state, player, game.players, game.config)
+
+        if not available_actions:
+            logger.warning("[%s] No available actions, defaulting to FOLD", self.name)
+            return Decision(action=GameAction.FOLD)
+
+        # 2. 构建 prompt 上下文
+        hand_description = format_hand_description(player.hand, player.has_seen_cards)
+        seen_status = "看牌" if player.has_seen_cards else "未看牌"
+        players_status_table = format_players_status(game.players, player.id, round_state)
+        action_history = format_action_history(round_state.actions)
+        chat_history = format_chat_history(chat_context)
+        available_actions_text = format_available_actions(
+            available_actions, round_state, player, game.players
+        )
+        experience_context = self.get_strategy_context()
+
+        # 3. 渲染 prompt
+        system_prompt = self.build_system_prompt()
+        decision_prompt = render_decision_prompt(
+            hand_description=hand_description,
+            seen_status=seen_status,
+            pot=round_state.pot,
+            your_chips=player.chips,
+            current_bet=round_state.current_bet,
+            players_status_table=players_status_table,
+            action_history=action_history,
+            chat_history=chat_history,
+            available_actions=available_actions_text,
+            experience_context=experience_context,
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": decision_prompt},
+        ]
+
+        # 4. 调用 LLM 并解析
+        try:
+            raw_response = await self.call_llm(messages)
+            decision = self.parse_decision_response(raw_response, available_actions)
+        except LLMCallError as e:
+            logger.error("[%s] LLM call failed, using fallback: %s", self.name, e)
+            fallback_action = self._get_fallback_action(available_actions)
+            decision = Decision(
+                action=fallback_action,
+                thought=ThoughtData(
+                    reasoning=f"LLM 调用失败，降级为 {fallback_action.value}",
+                    confidence=0.0,
+                    emotion="无奈",
+                ),
+                raw_response=f"[LLM ERROR] {e}",
+            )
+
+        # 5. 验证比牌操作的目标
+        if decision.action == GameAction.COMPARE:
+            decision = self._validate_compare_target(decision, game, player, available_actions)
+
+        # 6. 最终合法性校验（使用 rules 引擎做真正的校验）
+        if not validate_action(
+            round_state,
+            player,
+            decision.action,
+            game.players,
+            game.config,
+            decision.target,
+        ):
+            logger.warning(
+                "[%s] Action %s failed final validation, falling back",
+                self.name,
+                decision.action.value,
+            )
+            decision.action = self._get_fallback_action(available_actions)
+            decision.target = None
+
+        # 7. 记录思考数据
+        if decision.thought:
+            self.record_thought(round_state.round_number, decision.thought)
+
+        return decision
+
+    def _validate_compare_target(
+        self,
+        decision: Decision,
+        game: GameState,
+        player: Player,
+        available_actions: list[GameAction],
+    ) -> Decision:
+        """验证比牌目标的合法性，必要时自动选择或降级
+
+        Args:
+            decision: 当前决策
+            game: 游戏状态
+            player: 当前玩家
+            available_actions: 可用操作列表
+
+        Returns:
+            修正后的决策
+        """
+        # 获取可比牌的对手列表
+        compare_targets = [p for p in game.players if p.id != player.id and p.is_active]
+
+        if not compare_targets:
+            # 没有可比的对手，降级
+            logger.warning("[%s] No compare targets available, falling back", self.name)
+            decision.action = self._get_fallback_action(
+                [a for a in available_actions if a != GameAction.COMPARE]
+            )
+            decision.target = None
+            return decision
+
+        if decision.target:
+            # 验证指定的目标是否合法
+            target_player = game.get_player_by_id(decision.target)
+            if target_player and target_player.is_active and target_player.id != player.id:
+                return decision  # 目标合法
+            else:
+                logger.warning(
+                    "[%s] Compare target '%s' is invalid, auto-selecting",
+                    self.name,
+                    decision.target,
+                )
+
+        # 自动选择比牌目标：选择筹码最少的活跃对手（策略性选择弱者）
+        compare_targets.sort(key=lambda p: p.chips)
+        decision.target = compare_targets[0].id
+        logger.info(
+            "[%s] Auto-selected compare target: %s",
+            self.name,
+            compare_targets[0].name,
+        )
+        return decision
+
     # ---- 策略上下文 ----
 
     def get_strategy_context(self) -> str:
@@ -561,3 +740,172 @@ def _configure_api_keys(settings: Any) -> None:
         os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
     if settings.google_api_key:
         os.environ["GEMINI_API_KEY"] = settings.google_api_key
+
+
+# ---- 决策上下文格式化函数 ----
+
+
+def format_hand_description(hand: list[Card] | None, has_seen: bool) -> str:
+    """格式化手牌描述
+
+    Args:
+        hand: 手牌列表（3 张牌），None 表示未发牌
+        has_seen: 是否已看牌
+
+    Returns:
+        手牌描述文本，如 "红心K 黑桃K 方块3（一对K）"
+        未看牌时返回 "未知（你还没有看牌）"
+    """
+    if hand is None:
+        return "未知（未发牌）"
+
+    if not has_seen:
+        return "未知（你还没有看牌）"
+
+    # 已看牌：显示具体的牌和牌型
+    cards_str = ", ".join(c.chinese_description for c in hand)
+    hand_result = evaluate_hand(hand)
+    return f"{cards_str}（{hand_result.description}）"
+
+
+def format_players_status(
+    players: list[Player],
+    viewer_id: str,
+    round_state: RoundState,
+) -> str:
+    """格式化各玩家的状态表格
+
+    Args:
+        players: 所有玩家列表
+        viewer_id: 当前 AI 的玩家 ID
+        round_state: 当前局面状态
+
+    Returns:
+        格式化的玩家状态文本
+    """
+    lines = []
+    for i, p in enumerate(players):
+        is_self = "（你）" if p.id == viewer_id else ""
+        is_current = " ← 当前行动" if i == round_state.current_player_index else ""
+
+        if p.status == PlayerStatus.FOLDED:
+            status_text = "已弃牌"
+        elif p.status == PlayerStatus.OUT:
+            status_text = "已出局"
+        elif p.status == PlayerStatus.ACTIVE_BLIND:
+            status_text = "暗注（未看牌）"
+        elif p.status == PlayerStatus.ACTIVE_SEEN:
+            status_text = "明注（已看牌）"
+        else:
+            status_text = p.status.value
+
+        lines.append(
+            f"- {p.name}{is_self}: 筹码 {p.chips}, "
+            f"本局已下注 {p.total_bet_this_round}, "
+            f"状态: {status_text}{is_current}"
+        )
+
+    return "\n".join(lines)
+
+
+def format_action_history(actions: list[ActionRecord]) -> str:
+    """格式化本局行动历史
+
+    Args:
+        actions: 行动记录列表
+
+    Returns:
+        格式化的行动历史文本，无行动时返回提示
+    """
+    if not actions:
+        return "（本局尚无行动记录）"
+
+    lines = []
+    for i, a in enumerate(actions, 1):
+        action_desc = _action_to_chinese(a.action)
+
+        if a.amount and a.amount > 0:
+            action_desc += f" {a.amount} 筹码"
+
+        if a.target_id:
+            action_desc += f"（对象: {a.target_id}）"
+
+        name = a.player_name or a.player_id
+        lines.append(f"{i}. {name} {action_desc}")
+
+    return "\n".join(lines)
+
+
+def format_chat_history(chat_context: list[dict[str, str]] | None) -> str:
+    """格式化聊天记录
+
+    Args:
+        chat_context: 聊天记录列表，每条为 {"sender": ..., "message": ...}
+
+    Returns:
+        格式化的聊天记录文本
+    """
+    if not chat_context:
+        return "（本局暂无聊天记录）"
+
+    lines = []
+    for msg in chat_context:
+        sender = msg.get("sender", "未知")
+        message = msg.get("message", "")
+        lines.append(f"{sender}: {message}")
+
+    return "\n".join(lines)
+
+
+def format_available_actions(
+    actions: list[GameAction],
+    round_state: RoundState,
+    player: Player,
+    players: list[Player],
+) -> str:
+    """格式化可用操作列表（含费用说明）
+
+    Args:
+        actions: 可用操作列表
+        round_state: 当前局面状态
+        player: 当前玩家
+        players: 所有玩家列表
+
+    Returns:
+        格式化的可用操作文本
+    """
+    lines = []
+    for action in actions:
+        desc = _action_to_chinese(action)
+
+        if action == GameAction.CALL:
+            cost = get_call_cost(round_state, player)
+            desc += f"（费用: {cost} 筹码）"
+        elif action == GameAction.RAISE:
+            cost = get_raise_cost(round_state, player)
+            desc += f"（费用: {cost} 筹码，注额将翻倍至 {round_state.current_bet * 2}）"
+        elif action == GameAction.COMPARE:
+            cost = get_compare_cost(round_state, player)
+            targets = [p for p in players if p.id != player.id and p.is_active]
+            target_names = ", ".join(f"{p.name}(ID:{p.id})" for p in targets)
+            desc += f"（费用: {cost} 筹码，可比对象: {target_names}）"
+        elif action == GameAction.FOLD:
+            desc += "（无费用）"
+        elif action == GameAction.CHECK_CARDS:
+            desc += "（无费用，看牌后变为明注）"
+
+        lines.append(f"- {action.value}: {desc}")
+
+    return "\n".join(lines)
+
+
+def _action_to_chinese(action: GameAction) -> str:
+    """将 GameAction 转为中文描述"""
+    mapping = {
+        GameAction.FOLD: "弃牌",
+        GameAction.CALL: "跟注",
+        GameAction.RAISE: "加注",
+        GameAction.CHECK_CARDS: "看牌",
+        GameAction.COMPARE: "比牌",
+    }
+    return mapping.get(action, action.value)
