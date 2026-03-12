@@ -4,6 +4,7 @@ import TableLayout from '../components/Table/TableLayout'
 import { ActionPanel } from '../components/Actions'
 import ChatPanel from '../components/Table/ChatPanel'
 import ChatInput from '../components/Table/ChatInput'
+import GameLog from '../components/Table/GameLog'
 import { useGameStore } from '../stores/gameStore'
 import { useUIStore } from '../stores/uiStore'
 import { useGame } from '../hooks/useGame'
@@ -151,6 +152,11 @@ export default function GamePage() {
         {/* 牌桌区域 */}
         <div className="flex-1 relative min-w-0">
           <TableLayout className="w-full h-full" />
+
+          {/* 行动日志 - 左上角浮层 */}
+          <div className="absolute top-2 left-2 w-64 z-10">
+            <GameLog />
+          </div>
         </div>
 
         {/* 聊天面板 */}
