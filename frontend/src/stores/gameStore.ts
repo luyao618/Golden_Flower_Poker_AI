@@ -7,10 +7,15 @@ import { create } from 'zustand'
 import type {
   AIModelInfo,
   AIPlayerConfig,
+  Card,
+  ChatMessage,
   CreateGameResponse,
+  GameAction,
   GameConfig,
   GameState,
   Player,
+  RoundResult,
+  RoundState,
 } from '../types/game'
 import { createGame as apiCreateGame, getAvailableModels } from '../services/api'
 
@@ -31,6 +36,15 @@ interface GameStore {
   gameState: GameState | null
   status: 'idle' | 'creating' | 'playing' | 'finished'
   error: string | null
+
+  // 牌桌运行时状态
+  myPlayerId: string | null
+  myCards: Card[]
+  currentRound: RoundState | null
+  roundHistory: RoundResult[]
+  config: GameConfig | null
+  chatMessages: ChatMessage[]
+  availableActions: GameAction[]
 
   // 大厅配置
   playerName: string
@@ -55,6 +69,22 @@ interface GameStore {
   createGame: () => Promise<CreateGameResponse>
   setGameState: (state: GameState) => void
   reset: () => void
+
+  // 牌桌运行时操作
+  setMyPlayerId: (id: string) => void
+  setMyCards: (cards: Card[]) => void
+  setAvailableActions: (actions: GameAction[]) => void
+  updatePlayer: (playerId: string, updates: Partial<Player>) => void
+  setCurrentRound: (round: RoundState | null) => void
+  addRoundResult: (result: RoundResult) => void
+  addChatMessage: (message: ChatMessage) => void
+  clearChatMessages: () => void
+
+  // 衍生状态
+  getMyPlayer: () => Player | undefined
+  getCurrentPlayer: () => Player | undefined
+  getPlayerById: (id: string) => Player | undefined
+  isMyTurn: () => boolean
 }
 
 // ---- 默认值 ----
@@ -85,6 +115,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   gameState: null,
   status: 'idle',
   error: null,
+
+  myPlayerId: null,
+  myCards: [],
+  currentRound: null,
+  roundHistory: [],
+  config: null,
+  chatMessages: [],
+  availableActions: [],
 
   playerName: '玩家',
   aiOpponents: [createDefaultAIOpponent(), createDefaultAIOpponent()],
@@ -177,6 +215,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       gameState: state,
       gameId: state.game_id,
       players: state.players,
+      currentRound: state.current_round,
+      roundHistory: state.round_history,
+      config: state.config,
+      status: state.status === 'finished' ? 'finished' : 'playing',
     }),
 
   reset: () =>
@@ -186,8 +228,67 @@ export const useGameStore = create<GameStore>((set, get) => ({
       gameState: null,
       status: 'idle',
       error: null,
+      myPlayerId: null,
+      myCards: [],
+      currentRound: null,
+      roundHistory: [],
+      config: null,
+      chatMessages: [],
+      availableActions: [],
       playerName: '玩家',
       aiOpponents: [createDefaultAIOpponent(), createDefaultAIOpponent()],
       gameConfig: { ...DEFAULT_GAME_CONFIG },
     }),
+
+  // ---- 牌桌运行时操作 ----
+
+  setMyPlayerId: (id) => set({ myPlayerId: id }),
+
+  setMyCards: (cards) => set({ myCards: cards }),
+
+  setAvailableActions: (actions) => set({ availableActions: actions }),
+
+  updatePlayer: (playerId, updates) =>
+    set((state) => ({
+      players: state.players.map((p) =>
+        p.id === playerId ? { ...p, ...updates } : p
+      ),
+    })),
+
+  setCurrentRound: (round) => set({ currentRound: round }),
+
+  addRoundResult: (result) =>
+    set((state) => ({
+      roundHistory: [...state.roundHistory, result],
+    })),
+
+  addChatMessage: (message) =>
+    set((state) => ({
+      chatMessages: [...state.chatMessages, message],
+    })),
+
+  clearChatMessages: () => set({ chatMessages: [] }),
+
+  // ---- 衍生状态 ----
+
+  getMyPlayer: () => {
+    const { players, myPlayerId } = get()
+    return players.find((p) => p.id === myPlayerId)
+  },
+
+  getCurrentPlayer: () => {
+    const { players, currentRound } = get()
+    if (!currentRound) return undefined
+    return players[currentRound.current_player_index]
+  },
+
+  getPlayerById: (id) => {
+    return get().players.find((p) => p.id === id)
+  },
+
+  isMyTurn: () => {
+    const { myPlayerId } = get()
+    const currentPlayer = get().getCurrentPlayer()
+    return currentPlayer?.id === myPlayerId
+  },
 }))
