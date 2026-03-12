@@ -30,12 +30,14 @@ interface CopilotConnectProps {
 
 export default function CopilotConnect({ onStatusChange }: CopilotConnectProps) {
   const [state, setState] = useState<CopilotState>({ phase: 'idle' })
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pollingRef = useRef(false)
 
   // 清理轮询定时器
   const stopPolling = useCallback(() => {
+    pollingRef.current = false
     if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current)
+      clearTimeout(pollTimerRef.current)
       pollTimerRef.current = null
     }
   }, [])
@@ -71,28 +73,43 @@ export default function CopilotConnect({ onStatusChange }: CopilotConnectProps) 
         expiresAt: Date.now() + res.expires_in * 1000,
       })
 
-      // 开始轮询
+      // 开始轮询（使用 setTimeout 支持动态间隔，遵守 GitHub slow_down）
       stopPolling()
-      pollTimerRef.current = setInterval(async () => {
-        try {
-          const pollRes = await pollCopilotAuth()
-          if (pollRes.status === 'connected') {
+      pollingRef.current = true
+      let interval = res.expires_in > 600 ? 6000 : 5000 // 初始间隔 5-6 秒
+
+      const schedulePoll = () => {
+        if (!pollingRef.current) return
+        pollTimerRef.current = setTimeout(async () => {
+          if (!pollingRef.current) return
+          try {
+            const pollRes = await pollCopilotAuth()
+            if (pollRes.status === 'connected') {
+              stopPolling()
+              setState({
+                phase: 'connected',
+                modelCount: pollRes.models?.length ?? 0,
+              })
+              onStatusChange?.()
+              return
+            }
+            // 如果 GitHub 要求降速，使用返回的 interval
+            if (pollRes.slow_down && pollRes.interval) {
+              interval = (pollRes.interval + 1) * 1000 // 加 1 秒余量
+            }
+          } catch {
+            // 轮询失败时停止（如 device code 过期）
             stopPolling()
             setState({
-              phase: 'connected',
-              modelCount: pollRes.models?.length ?? 0,
+              phase: 'error',
+              message: '授权超时或被拒绝，请重试',
             })
-            onStatusChange?.()
+            return
           }
-        } catch {
-          // 轮询失败时停止（如 device code 过期）
-          stopPolling()
-          setState({
-            phase: 'error',
-            message: '授权超时或被拒绝，请重试',
-          })
-        }
-      }, 5000)
+          schedulePoll() // 安排下一次 poll
+        }, interval)
+      }
+      schedulePoll()
     } catch (err) {
       setState({
         phase: 'error',
