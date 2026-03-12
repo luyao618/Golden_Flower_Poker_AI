@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.game_store import GameStore, get_game_store
+from app.agents.agent_manager import get_agent_manager
 from app.config import AI_AVATARS, AI_NAMES, AI_PERSONALITIES, get_available_models
 from app.db.database import get_db
 from app.db.schemas import GameDB, PlayerDB, RoundDB
@@ -208,6 +209,20 @@ async def create_game_endpoint(
 
     # 存入内存
     store.put(game_state)
+
+    # 为 AI 玩家创建 Agent 实例（用于 WebSocket 中的 AI 决策）
+    agent_mgr = get_agent_manager()
+    ai_players = [p for p in game_state.players if p.player_type.value == "ai"]
+    agent_configs = [
+        {
+            "agent_id": p.id,
+            "name": p.name,
+            "model_id": p.model_id or "openai-gpt4o-mini",
+            "personality": p.personality or "analytical",
+        }
+        for p in ai_players
+    ]
+    agent_mgr.create_agents_for_game(game_state.game_id, agent_configs)
 
     # 持久化到数据库
     game_db = GameDB(
