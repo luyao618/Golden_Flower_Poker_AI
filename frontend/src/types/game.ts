@@ -333,6 +333,8 @@ export interface CopilotDeviceFlowResponse {
 export interface CopilotPollResponse {
   status: 'pending' | 'connected'
   models?: AIModelInfo[]
+  slow_down?: boolean
+  interval?: number
 }
 
 export interface CopilotStatusResponse {

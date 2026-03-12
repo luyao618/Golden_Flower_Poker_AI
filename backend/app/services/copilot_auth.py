@@ -182,9 +182,10 @@ class CopilotAuthManager:
                     return {"status": "pending"}
                 elif error == "slow_down":
                     # GitHub 要求降低轮询频率
+                    new_interval = data.get("interval", 10)
                     if self._device_flow:
-                        self._device_flow.interval += 5
-                    return {"status": "pending", "slow_down": True}
+                        self._device_flow.interval = new_interval
+                    return {"status": "pending", "slow_down": True, "interval": new_interval}
                 elif error == "expired_token":
                     self._device_flow = None
                     raise CopilotAuthError("Device flow expired")

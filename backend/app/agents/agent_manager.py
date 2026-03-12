@@ -13,7 +13,7 @@ from typing import Any
 from app.agents.base_agent import BaseAgent
 from app.config import (
     AI_AVATARS,
-    AI_MODELS,
+    ALL_MODELS,
     AI_NAMES,
     AI_PERSONALITIES,
     get_settings,
@@ -93,7 +93,7 @@ class AgentManager:
 
             # 模型
             model_id = config.get("model_id", "openai-gpt4o-mini")
-            if model_id not in AI_MODELS:
+            if model_id not in ALL_MODELS:
                 logger.warning("Unknown model '%s', using 'openai-gpt4o-mini'", model_id)
                 model_id = "openai-gpt4o-mini"
 

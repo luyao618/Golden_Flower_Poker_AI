@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import (
     DateTime,
@@ -51,7 +52,7 @@ class GameDB(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # 关系
     players: Mapped[list[PlayerDB]] = relationship(
@@ -89,8 +90,8 @@ class PlayerDB(Base):
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     avatar: Mapped[str] = mapped_column(String(50), nullable=True, default="")
     player_type: Mapped[str] = mapped_column(String(10), nullable=False)
-    model_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    personality: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    model_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    personality: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     initial_chips: Mapped[int] = mapped_column(Integer, nullable=False)
     current_chips: Mapped[int] = mapped_column(Integer, nullable=False)
 
@@ -133,12 +134,12 @@ class RoundDB(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     game_id: Mapped[str] = mapped_column(String(36), ForeignKey("games.id"), nullable=False)
     round_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    pot: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    winner_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    win_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    actions: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    hands: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    player_chip_changes: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    pot: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    winner_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    win_method: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    actions: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    hands: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    player_chip_changes: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -179,17 +180,17 @@ class ThoughtRecordDB(Base):
     game_id: Mapped[str] = mapped_column(String(36), ForeignKey("games.id"), nullable=False)
     round_number: Mapped[int] = mapped_column(Integer, nullable=False)
     turn_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    hand_evaluation: Mapped[str | None] = mapped_column(Text, nullable=True)
-    opponent_analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
-    chat_analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
-    risk_assessment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    hand_evaluation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    opponent_analysis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    chat_analysis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    risk_assessment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     decision: Mapped[str] = mapped_column(String(20), nullable=False)
-    decision_target: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
-    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
-    emotion: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    table_talk: Mapped[str | None] = mapped_column(Text, nullable=True)
-    raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decision_target: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    emotion: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    table_talk: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    raw_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -226,9 +227,9 @@ class ChatMessageDB(Base):
     sender_name: Mapped[str] = mapped_column(String(50), nullable=False)
     message_type: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    related_action: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    trigger_event: Mapped[str | None] = mapped_column(Text, nullable=True)
-    inner_thought: Mapped[str | None] = mapped_column(Text, nullable=True)
+    related_action: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    trigger_event: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    inner_thought: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -264,12 +265,12 @@ class ExperienceReviewDB(Base):
     game_id: Mapped[str] = mapped_column(String(36), ForeignKey("games.id"), nullable=False)
     trigger: Mapped[str] = mapped_column(String(30), nullable=False)
     triggered_at_round: Mapped[int] = mapped_column(Integer, nullable=False)
-    rounds_reviewed: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    self_analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
-    opponent_patterns: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    strategy_adjustment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    confidence_shift: Mapped[float | None] = mapped_column(Float, nullable=True)
-    strategy_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rounds_reviewed: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    self_analysis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    opponent_patterns: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    strategy_adjustment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confidence_shift: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    strategy_context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -300,7 +301,7 @@ class RoundNarrativeDB(Base):
     game_id: Mapped[str] = mapped_column(String(36), ForeignKey("games.id"), nullable=False)
     round_number: Mapped[int] = mapped_column(Integer, nullable=False)
     narrative: Mapped[str] = mapped_column(Text, nullable=False)
-    outcome: Mapped[str | None] = mapped_column(Text, nullable=True)
+    outcome: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -333,13 +334,13 @@ class GameSummaryDB(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     agent_id: Mapped[str] = mapped_column(String(36), ForeignKey("players.id"), nullable=False)
     game_id: Mapped[str] = mapped_column(String(36), ForeignKey("games.id"), nullable=False)
-    stats: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    key_moments: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    opponent_impressions: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    self_reflection: Mapped[str | None] = mapped_column(Text, nullable=True)
-    chat_strategy_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    learning_journey: Mapped[str | None] = mapped_column(Text, nullable=True)
-    narrative_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stats: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    key_moments: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    opponent_impressions: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    self_reflection: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    chat_strategy_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    learning_journey: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    narrative_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
