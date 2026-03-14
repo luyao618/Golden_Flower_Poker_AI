@@ -1,27 +1,19 @@
 import { motion } from 'framer-motion'
 import type { Card, ChatMessage, Player, PlayerStatus } from '../../types/game'
 import { useUIStore } from '../../stores/uiStore'
-import { getAvatarColor, getAvatarText } from '../../utils/theme'
+import { getAvatarColor, getAvatarAccent, getAvatarText } from '../../utils/theme'
 import ChatBubble from './ChatBubble'
 import CardHand from '../Cards/CardHand'
 
 interface PlayerSeatProps {
   player: Player
-  /** 座位位置（通过 style 的 left/top 传入） */
   position: { x: number; y: number }
-  /** 是否是当前行动玩家 */
   isActive: boolean
-  /** 是否是当前用户自己 */
   isMe: boolean
-  /** 是否是庄家 */
   isDealer: boolean
-  /** 该玩家最新的聊天消息（用于头顶气泡） */
   latestMessage?: ChatMessage | null
-  /** 人类玩家的手牌（只有 isMe 时有值） */
   myCards?: Card[]
-  /** 看牌回调（点击自己的牌背触发看牌） */
   onLookAtCards?: () => void
-  /** 点击玩家座位的回调（比牌选择等） */
   onClick?: () => void
 }
 
@@ -29,22 +21,31 @@ interface PlayerSeatProps {
 const STATUS_LABELS: Record<PlayerStatus, string> = {
   active_blind: '暗注',
   active_seen: '明注',
-  folded: '已弃牌',
+  folded: '弃牌',
   out: '出局',
 }
 
-/** 玩家状态对应的颜色 */
-const STATUS_COLORS: Record<PlayerStatus, string> = {
-  active_blind: 'text-[var(--color-info)] bg-[var(--color-info)]/10 border-[var(--color-info)]/30',
-  active_seen: 'text-[var(--color-gold)] bg-[var(--color-gold)]/10 border-[var(--color-gold)]/30',
-  folded: 'text-[var(--text-muted)] bg-white/5 border-white/10',
-  out: 'text-[var(--color-danger)] bg-[var(--color-danger)]/10 border-[var(--color-danger)]/30',
+/**
+ * 根据座位在桌面上的位置，计算手牌应该偏移的方向
+ * 手牌应该朝向桌面中心方向放置
+ */
+function getCardOffset(position: { x: number; y: number }): { x: number; y: number } {
+  // 桌面中心是 (50, 50)，手牌朝中心方向偏移
+  const dx = 50 - position.x
+  const dy = 50 - position.y
+  const dist = Math.sqrt(dx * dx + dy * dy)
+  if (dist === 0) return { x: 0, y: 0 }
+  // 归一化后按固定像素偏移（朝中心方向 40px）
+  const scale = 40 / dist
+  return { x: dx * scale, y: dy * scale }
 }
 
 /**
- * 玩家座位组件
- * 显示玩家头像、名字、筹码和状态标记
- * 支持当前行动高亮、比牌选择模式
+ * 玩家座位组件 — 紧凑版
+ *
+ * 布局：头像（带光环）+ 名字筹码信息浮在下方
+ * 手牌朝桌面中心方向偏移放置
+ * 参考设计图中玩家坐在桌边，头像为主体，信息简洁
  */
 export default function PlayerSeat({
   player,
@@ -57,7 +58,7 @@ export default function PlayerSeat({
   onLookAtCards: _onLookAtCards,
   onClick,
 }: PlayerSeatProps) {
-  const { isCompareMode, thinkingPlayerId, reviewingPlayerId, showPlayerCards, hasLookedAtCards: _hasLookedAtCards, toggleThoughtDrawer } = useUIStore()
+  const { isCompareMode, thinkingPlayerId, reviewingPlayerId, showPlayerCards, hasLookedAtCards, toggleThoughtDrawer } = useUIStore()
 
   const isFolded = player.status === 'folded'
   const isOut = player.status === 'out'
@@ -67,63 +68,105 @@ export default function PlayerSeat({
   const isClickable = isCompareMode && !isMe && !isFolded && !isOut
   const isAI = player.player_type === 'ai'
 
-  // 气泡位置：牌桌下半部分的玩家气泡显示在上方，上半部分显示在下方
+  // 气泡位置
   const bubblePosition = position.y > 50 ? 'above' : 'below'
+
+  // 手牌偏移方向（朝桌面中心）
+  const cardOffset = getCardOffset(position)
+
+  const accent = getAvatarAccent(player.id)
+
+  // 是否显示手牌
+  const shouldShowCards = showPlayerCards && !isOut && !isFolded
+  const canLookAtCards = isMe && !hasLookedAtCards && _myCards.length > 0 && player.status === 'active_blind'
 
   return (
     <motion.div
-      className="absolute flex flex-col items-center"
+      className="absolute"
       style={{
         left: `${position.x}%`,
         top: `${position.y}%`,
         transform: 'translate(-50%, -50%)',
+        zIndex: isActive ? 20 : 10,
       }}
       initial={{ scale: 0, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 300, damping: 25 }}
     >
-      {/* 整体容器 */}
+      {/* 手牌 — 朝桌面中心方向偏移 */}
+      {shouldShowCards && (
+        <motion.div
+          className="absolute pointer-events-auto"
+          style={{
+            left: '50%',
+            top: '50%',
+            transform: `translate(calc(-50% + ${cardOffset.x}px), calc(-50% + ${cardOffset.y}px))`,
+            zIndex: 5,
+          }}
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3, delay: 0.15 }}
+        >
+          {isMe ? (
+            <div
+              className={canLookAtCards ? 'cursor-pointer' : ''}
+              onClick={canLookAtCards ? _onLookAtCards : undefined}
+            >
+              <CardHand
+                cards={_myCards.length > 0 ? _myCards : PLACEHOLDER_CARDS}
+                faceUp={hasLookedAtCards && _myCards.length > 0}
+                size="sm"
+                fanAngle={6}
+              />
+              {canLookAtCards && (
+                <div className="text-center text-[8px] text-[var(--color-gold)]/60 mt-0.5 animate-pulse">
+                  点击看牌
+                </div>
+              )}
+            </div>
+          ) : (
+            <CardHand
+              cards={PLACEHOLDER_CARDS}
+              faceUp={false}
+              size="sm"
+              fanAngle={6}
+            />
+          )}
+        </motion.div>
+      )}
+
+      {/* 聊天气泡 */}
+      <ChatBubble message={latestMessage ?? null} position={bubblePosition} />
+
+      {/* 可点击容器 — 头像 + 信息 */}
       <div
         className={`
-          relative flex flex-col items-center gap-1 p-2 rounded-xl
+          relative flex flex-col items-center
           transition-all duration-300
-          ${isDimmed ? 'opacity-50' : ''}
-          ${isClickable ? 'cursor-pointer hover:scale-105' : ''}
+          ${isDimmed ? 'opacity-40 grayscale-[0.5]' : ''}
+          ${isClickable ? 'cursor-pointer hover:scale-110' : ''}
           ${isActive ? 'scale-105' : ''}
         `}
         onClick={isClickable ? onClick : undefined}
       >
-        {/* 聊天气泡 */}
-        <ChatBubble message={latestMessage ?? null} position={bubblePosition} />
-
-        {/* 行动指示器 - 外部发光环 */}
-        {isActive && (
-          <motion.div
-            className="absolute -inset-1 rounded-xl border-2 border-[var(--color-primary)]/70 shadow-[0_0_15px_rgba(0,212,255,0.3)]"
-            animate={{
-              boxShadow: [
-                '0 0 10px rgba(0,212,255,0.2)',
-                '0 0 25px rgba(0,212,255,0.5)',
-                '0 0 10px rgba(0,212,255,0.2)',
-              ],
-            }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-          />
-        )}
-
-        {/* 头像 */}
+        {/* 头像区域 */}
         <div
           className={`relative ${isAI && !isCompareMode ? 'cursor-pointer' : ''}`}
           onClick={isAI && !isCompareMode ? () => toggleThoughtDrawer(player.id) : undefined}
           title={isAI && !isCompareMode ? `查看 ${player.name} 的心路历程` : undefined}
         >
+          {/* 发光光环 — 简洁的 box-shadow 发光 + border */}
+          {!isDimmed && (
+            <NeonGlow accent={accent} isActive={isActive} />
+          )}
+
+          {/* 头像主体 64px */}
           <div
             className={`
-              w-12 h-12 rounded-full flex items-center justify-center
-              text-white font-bold text-lg shadow-lg
+              relative z-10 w-16 h-16 rounded-full flex items-center justify-center
+              text-white font-bold text-xl
               bg-gradient-to-br ${getAvatarColor(player.id)}
-              ${isDimmed ? 'grayscale' : ''}
-              ${isMe ? 'ring-2 ring-[var(--color-gold)] shadow-[0_0_12px_rgba(255,215,0,0.3)]' : 'ring-2 ring-white/15'}
+              shadow-lg
             `}
           >
             {player.avatar || getAvatarText(player.name)}
@@ -131,23 +174,30 @@ export default function PlayerSeat({
 
           {/* 庄家标记 */}
           {isDealer && (
-            <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-amber-500 border border-amber-300 flex items-center justify-center shadow-md">
-              <span className="text-[10px] font-bold text-amber-900">D</span>
+            <div className="absolute -top-0.5 -right-0.5 z-20 w-5 h-5 rounded-full bg-amber-500 border-2 border-amber-300 flex items-center justify-center shadow-md">
+              <span className="text-[9px] font-bold text-amber-900">D</span>
+            </div>
+          )}
+
+          {/* AI 标记 */}
+          {isAI && (
+            <div className="absolute -top-0.5 -left-0.5 z-20 w-5 h-5 rounded-full bg-[var(--color-primary)]/80 border border-[var(--color-primary)] flex items-center justify-center">
+              <span className="text-[8px] font-bold text-white">AI</span>
             </div>
           )}
 
           {/* AI 思考指示器 */}
           {isThinking && (
-            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
+            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 z-20">
               <ThinkingDots />
             </div>
           )}
 
           {/* AI 经验回顾指示器 */}
           {isReviewing && (
-            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
+            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 z-20">
               <motion.div
-                className="bg-[var(--color-secondary)]/80 rounded-full px-1.5 py-0.5 text-[8px] text-white whitespace-nowrap"
+                className="bg-[var(--color-secondary)]/80 rounded-full px-1.5 py-0.5 text-[7px] text-white whitespace-nowrap"
                 animate={{ opacity: [1, 0.5, 1] }}
                 transition={{ duration: 1, repeat: Infinity }}
               >
@@ -155,141 +205,104 @@ export default function PlayerSeat({
               </motion.div>
             </div>
           )}
+        </div>
 
-          {/* 玩家类型标记 (AI) */}
-          {player.player_type === 'ai' && (
-            <div className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-[var(--color-primary)]/80 border border-[var(--color-primary)] flex items-center justify-center">
-              <span className="text-[8px] font-bold text-white">AI</span>
+        {/* 名字 + 筹码（紧凑一行或两行小字） */}
+        <div className="mt-1.5 flex flex-col items-center gap-0">
+          <div className={`text-xs font-medium truncate max-w-[80px] leading-tight ${isMe ? 'text-[var(--color-gold)]' : 'text-[var(--text-primary)]'}`}>
+            {player.name}
+            {isMe && <span className="text-[var(--color-gold)]/50 text-[9px]"> (你)</span>}
+          </div>
+
+          {/* 筹码 + 状态合并一行 */}
+          <div className="flex items-center gap-1 text-[10px] leading-tight">
+            <span className="text-[var(--color-gold)]/80 font-mono font-semibold tabular-nums">
+              {player.chips.toLocaleString()}
+            </span>
+            <span className="text-[var(--text-disabled)]">·</span>
+            <span className={`${getStatusColor(player.status)}`}>
+              {STATUS_LABELS[player.status]}
+            </span>
+          </div>
+
+          {/* 本局下注额 */}
+          {player.total_bet_this_round > 0 && (
+            <div className="text-[var(--color-primary)]/50 text-[9px] leading-tight">
+              下注 {player.total_bet_this_round}
             </div>
           )}
         </div>
-
-        {/* 名字 */}
-        <div className={`text-sm font-medium truncate max-w-[80px] ${isMe ? 'text-[var(--color-gold)]' : 'text-[var(--text-primary)]'}`}>
-          {player.name}
-          {isMe && <span className="text-[var(--color-gold)]/60 text-xs"> (你)</span>}
-        </div>
-
-        {/* 筹码 */}
-        <div className="flex items-center gap-1">
-          <div className="w-2.5 h-2.5 rounded-full bg-[var(--color-gold)] border border-[var(--color-gold)]/50" />
-          <span className="text-[var(--color-gold)] text-xs font-mono font-semibold tabular-nums">
-            {player.chips.toLocaleString()}
-          </span>
-        </div>
-
-        {/* 本局下注额 */}
-        {player.total_bet_this_round > 0 && (
-          <div className="text-[var(--color-primary)]/60 text-[10px]">
-            本局已下 {player.total_bet_this_round}
-          </div>
-        )}
-
-        {/* 状态标签 */}
-        <div
-          className={`
-            text-[10px] px-2 py-0.5 rounded-full border
-            ${STATUS_COLORS[player.status]}
-          `}
-        >
-          {STATUS_LABELS[player.status]}
-        </div>
-
-        {/* 手牌显示 - 人类玩家的手牌在 footer 中显示，桌面上只显示 AI 手牌 */}
-        {showPlayerCards && !isOut && !isFolded && !isMe && (
-          <PlayerCards
-            isMe={false}
-            myCards={[]}
-            hasLookedAtCards={false}
-            playerStatus={player.status}
-            onLookAtCards={undefined}
-          />
-        )}
       </div>
     </motion.div>
   )
 }
 
-// ---- 辅助组件 ----
+// ---- 辅助函数 ----
 
-/**
- * 玩家手牌显示
- * - 人类玩家：点击牌背触发看牌（3D翻转），看牌后显示正面
- * - AI 玩家：始终显示牌背
- */
-function PlayerCards({
-  isMe,
-  myCards,
-  hasLookedAtCards,
-  playerStatus,
-  onLookAtCards,
-}: {
-  isMe: boolean
-  myCards: Card[]
-  hasLookedAtCards: boolean
-  playerStatus: PlayerStatus
-  onLookAtCards?: () => void
-}) {
-  // 人类玩家
-  if (isMe) {
-    // 没有手牌数据时显示 3 张牌背占位
-    const cards = myCards.length > 0 ? myCards : PLACEHOLDER_CARDS
-    const isFaceUp = hasLookedAtCards && myCards.length > 0
-    const canLook = !hasLookedAtCards && myCards.length > 0 && playerStatus === 'active_blind'
-
-    return (
-      <motion.div
-        className="mt-1"
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.1 }}
-      >
-        <CardHand
-          cards={cards}
-          faceUp={isFaceUp}
-          size="sm"
-          clickable={canLook}
-          onClick={canLook ? onLookAtCards : undefined}
-          fanAngle={6}
-        />
-        {canLook && (
-          <div className="text-center text-[9px] text-[var(--color-gold)]/70 mt-0.5 animate-pulse">
-            点击看牌
-          </div>
-        )}
-      </motion.div>
-    )
+function getStatusColor(status: PlayerStatus): string {
+  switch (status) {
+    case 'active_blind':
+      return 'text-[var(--color-info)]/70'
+    case 'active_seen':
+      return 'text-[var(--color-gold)]/70'
+    case 'folded':
+      return 'text-[var(--text-muted)]'
+    case 'out':
+      return 'text-[var(--color-danger)]/70'
   }
-
-  // AI 玩家：显示牌背
-  return (
-    <motion.div
-      className="mt-1"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: 0.1 }}
-    >
-      <CardHand
-        cards={PLACEHOLDER_CARDS}
-        faceUp={false}
-        size="sm"
-        fanAngle={6}
-      />
-    </motion.div>
-  )
 }
 
-/** 占位牌数据（仅用于牌背显示） */
+// ---- 辅助组件 ----
+
 const PLACEHOLDER_CARDS: Card[] = [
   { suit: 'spades', rank: 14 },
   { suit: 'hearts', rank: 13 },
   { suit: 'diamonds', rank: 12 },
 ]
 
+/**
+ * 发光光环 — 使用简洁的 box-shadow 发光 + border
+ * 行动中玩家有脉冲呼吸动画
+ * 适配 64px 头像
+ */
+function NeonGlow({ accent, isActive }: { accent: { border: string; glow: string }; isActive: boolean }) {
+  const baseStyle = {
+    border: `2px solid ${accent.border}`,
+    boxShadow: `0 0 10px ${accent.glow}, 0 0 20px ${accent.glow}`,
+  }
+
+  if (!isActive) {
+    return (
+      <div
+        className="absolute -inset-[4px] rounded-full z-0"
+        style={baseStyle}
+      />
+    )
+  }
+
+  return (
+    <motion.div
+      className="absolute -inset-[4px] rounded-full z-0"
+      style={{
+        border: `2px solid ${accent.border}`,
+      }}
+      animate={{
+        boxShadow: [
+          `0 0 10px ${accent.glow}, 0 0 20px ${accent.glow}`,
+          `0 0 20px ${accent.border}, 0 0 40px ${accent.glow}, 0 0 60px ${accent.glow}`,
+          `0 0 10px ${accent.glow}, 0 0 20px ${accent.glow}`,
+        ],
+        scale: [1, 1.06, 1],
+      }}
+      transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+    />
+  )
+}
+
 /** AI 思考中的动态圆点指示器 */
 function ThinkingDots() {
   return (
-    <div className="flex items-center gap-0.5 bg-black/60 rounded-full px-1.5 py-0.5">
+    <div className="flex items-center gap-0.5 bg-black/70 rounded-full px-1.5 py-0.5">
       {[0, 1, 2].map((i) => (
         <motion.div
           key={i}

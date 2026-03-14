@@ -1,17 +1,183 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useEffect, useMemo, useCallback } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import TableLayout from '../components/Table/TableLayout'
 import { ActionPanel } from '../components/Actions'
 import ChatPanel from '../components/Table/ChatPanel'
 import ChatInput from '../components/Table/ChatInput'
 import GameLog from '../components/Table/GameLog'
-import CardHand from '../components/Cards/CardHand'
 import { ThoughtDrawer } from '../components/Thought'
 import CopilotErrorModal from '../components/CopilotErrorModal'
 import { useGameStore } from '../stores/gameStore'
 import { useUIStore } from '../stores/uiStore'
 import { useGame } from '../hooks/useGame'
 import type { ConnectionStatus } from '../hooks/useWebSocket'
+import type { Player, RoundState, GameConfig, Card, ActionLogEntry } from '../types/game'
+
+// ============================================================
+// DEV MOCK — 仅开发模式下填充假数据以预览 UI
+// ============================================================
+
+const DEV_MOCK_ENABLED = import.meta.env.DEV
+
+const MOCK_PLAYERS: Player[] = [
+  {
+    id: 'human-1',
+    name: '玩家',
+    avatar: '🧑',
+    player_type: 'human',
+    chips: 850,
+    status: 'active_seen',
+    hand: [
+      { suit: 'hearts', rank: 14 },
+      { suit: 'spades', rank: 13 },
+      { suit: 'diamonds', rank: 12 },
+    ],
+    total_bet_this_round: 40,
+    model_id: null,
+    personality: null,
+  },
+  {
+    id: 'ai-1',
+    name: 'GPT-4o',
+    avatar: '🤖',
+    player_type: 'ai',
+    chips: 1120,
+    status: 'active_blind',
+    hand: null,
+    total_bet_this_round: 20,
+    model_id: 'openai-gpt4o',
+    personality: '谨慎',
+  },
+  {
+    id: 'ai-2',
+    name: 'Claude',
+    avatar: '🤖',
+    player_type: 'ai',
+    chips: 980,
+    status: 'active_seen',
+    hand: null,
+    total_bet_this_round: 40,
+    model_id: 'anthropic-claude',
+    personality: '激进',
+  },
+  {
+    id: 'ai-3',
+    name: 'Gemini',
+    avatar: '🤖',
+    player_type: 'ai',
+    chips: 650,
+    status: 'folded',
+    hand: null,
+    total_bet_this_round: 10,
+    model_id: 'google-gemini',
+    personality: '随机',
+  },
+]
+
+const MOCK_ROUND: RoundState = {
+  round_number: 3,
+  pot: 110,
+  current_bet: 40,
+  dealer_index: 1,
+  current_player_index: 0,
+  actions: [
+    { player_id: 'ai-1', player_name: 'GPT-4o', action: 'call', amount: 20, target_id: null, timestamp: Date.now() / 1000 - 30 },
+    { player_id: 'ai-2', player_name: 'Claude', action: 'raise', amount: 40, target_id: null, timestamp: Date.now() / 1000 - 20 },
+    { player_id: 'ai-3', player_name: 'Gemini', action: 'fold', amount: 0, target_id: null, timestamp: Date.now() / 1000 - 10 },
+  ],
+  phase: 'betting',
+  turn_count: 4,
+  max_turns: 10,
+}
+
+const MOCK_CONFIG: GameConfig = {
+  initial_chips: 1000,
+  ante: 10,
+  max_bet: 200,
+  max_turns: 10,
+}
+
+const MOCK_MY_CARDS: Card[] = [
+  { suit: 'hearts', rank: 14 },
+  { suit: 'spades', rank: 13 },
+  { suit: 'diamonds', rank: 12 },
+]
+
+const MOCK_ACTION_LOG: Omit<ActionLogEntry, 'timestamp'>[] = [
+  { player_id: 'ai-1', player_name: 'GPT-4o', action: 'call', amount: 20, compare_result: null },
+  { player_id: 'ai-2', player_name: 'Claude', action: 'raise', amount: 40, compare_result: null },
+  { player_id: 'ai-3', player_name: 'Gemini', action: 'fold', amount: 0, compare_result: null },
+]
+
+function useDevMock() {
+  const injected = useRef(false)
+  const gameId = useGameStore((s) => s.gameId)
+
+  useEffect(() => {
+    if (!DEV_MOCK_ENABLED || injected.current || gameId) return
+
+    const store = useGameStore.getState()
+    useGameStore.setState({
+      gameId: 'dev-mock-game-001',
+      myPlayerId: 'human-1',
+      players: MOCK_PLAYERS,
+      status: 'playing',
+      currentRound: MOCK_ROUND,
+      config: MOCK_CONFIG,
+      myCards: MOCK_MY_CARDS,
+      availableActions: ['fold', 'call', 'raise', 'compare'],
+      chatMessages: [
+        {
+          id: 'chat-1',
+          game_id: 'dev-mock-game-001',
+          round_number: 3,
+          player_id: 'ai-1',
+          player_name: 'GPT-4o',
+          message_type: 'action_talk',
+          content: '我跟了',
+          timestamp: Date.now() / 1000 - 25,
+        },
+        {
+          id: 'chat-2',
+          game_id: 'dev-mock-game-001',
+          round_number: 3,
+          player_id: 'ai-2',
+          player_name: 'Claude',
+          message_type: 'action_talk',
+          content: '加注！',
+          timestamp: Date.now() / 1000 - 15,
+        },
+      ],
+      roundHistory: [
+        {
+          round_number: 1,
+          winner_id: 'human-1',
+          winner_name: '玩家',
+          pot: 60,
+          win_method: 'all_folded',
+          hands_revealed: null,
+          player_chip_changes: { 'human-1': 40, 'ai-1': -20, 'ai-2': -10, 'ai-3': -10 },
+        },
+        {
+          round_number: 2,
+          winner_id: 'ai-2',
+          winner_name: 'Claude',
+          pot: 120,
+          win_method: 'compare',
+          hands_revealed: null,
+          player_chip_changes: { 'human-1': -40, 'ai-1': -40, 'ai-2': 80, 'ai-3': 0 },
+        },
+      ],
+    })
+
+    for (const entry of MOCK_ACTION_LOG) {
+      store.addActionLog(entry)
+    }
+
+    injected.current = true
+    console.log('[DEV MOCK] 已注入模拟游戏数据')
+  }, [gameId])
+}
 
 /**
  * 连接状态指示器
@@ -39,6 +205,8 @@ function ConnectionIndicator({ status }: { status: ConnectionStatus }) {
 }
 
 export default function GamePage() {
+  useDevMock()
+
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const gameId = useGameStore((s) => s.gameId)
@@ -53,16 +221,9 @@ export default function GamePage() {
   const isChatPanelExpanded = useUIStore((s) => s.isChatPanelExpanded)
   const toggleChatPanel = useUIStore((s) => s.toggleChatPanel)
   const toggleThoughtDrawer = useUIStore((s) => s.toggleThoughtDrawer)
-  const showPlayerCards = useUIStore((s) => s.showPlayerCards)
-  const hasLookedAtCards = useUIStore((s) => s.hasLookedAtCards)
-  const setHasLookedAtCards = useUIStore((s) => s.setHasLookedAtCards)
-  const myCards = useGameStore((s) => s.myCards)
 
-  // 使用 URL 中的 gameId，如果 store 中有 myPlayerId 就用它
-  // 否则等 WebSocket 连接后通过 game_state 事件获取
   const effectiveGameId = id ?? gameId ?? ''
 
-  // 连接 WebSocket（只有当 gameId 和 playerId 都有效时才连接）
   const gameConfig = useMemo(
     () =>
       effectiveGameId && myPlayerId
@@ -73,7 +234,6 @@ export default function GamePage() {
 
   const { connectionStatus, sendAction, sendStartRound, sendChatMessage, disconnect } = useGame(gameConfig)
 
-  // 清理：离开页面时断开连接并重置状态
   useEffect(() => {
     return () => {
       disconnect()
@@ -81,13 +241,11 @@ export default function GamePage() {
     }
   }, [disconnect, resetUI])
 
-  // 处理结束游戏
   const handleEndGame = () => {
     disconnect()
     navigate(`/result/${effectiveGameId}`)
   }
 
-  // 处理返回大厅
   const handleBackToLobby = () => {
     disconnect()
     reset()
@@ -95,28 +253,12 @@ export default function GamePage() {
     navigate('/')
   }
 
-  // 判断是否可以开始新局
   const canStartRound =
     connectionStatus === 'connected' &&
     players.length > 0 &&
     status === 'playing' &&
     !currentRound
 
-  // 看牌回调（点击手牌触发）—— 同时发送 check_cards 操作给后端
-  const handleLookAtCards = useCallback(() => {
-    setHasLookedAtCards(true)
-    sendAction('check_cards')
-  }, [setHasLookedAtCards, sendAction])
-
-  // 人类玩家信息
-  const availableActions = useGameStore((s) => s.availableActions)
-  const myPlayer = players.find((p) => p.id === myPlayerId)
-  const isMyActive = myPlayer && myPlayer.status !== 'folded' && myPlayer.status !== 'out'
-  // 只有当轮到自己且 check_cards 在可用操作中时，才允许点击牌面看牌
-  const canLookAtCards = !hasLookedAtCards && myCards.length > 0 && availableActions.includes('check_cards')
-  const showMyCards = showPlayerCards && currentRound && isMyActive && myCards.length > 0
-
-  // 如果没有 myPlayerId，显示加载状态
   if (!myPlayerId) {
     return (
       <div className="h-screen bg-[var(--bg-deepest)] flex items-center justify-center">
@@ -135,58 +277,72 @@ export default function GamePage() {
   }
 
   return (
-    <div className="h-screen bg-[var(--bg-deepest)] flex flex-col">
-      {/* 顶部栏 */}
-      <header className="flex items-center justify-between px-4 py-2 bg-[var(--bg-deep)]/80 backdrop-blur-md border-b border-[var(--border-default)]">
-        <button
-          onClick={handleBackToLobby}
-          className="text-[var(--color-primary)] hover:text-[var(--color-primary)] text-sm transition-colors cursor-pointer"
-        >
-          ← 返回大厅
-        </button>
-        <div className="flex items-center gap-3">
-          <div className="text-[var(--text-muted)] text-xs font-mono">
-            ID: {effectiveGameId.slice(0, 8)}
-          </div>
-          <ConnectionIndicator status={connectionStatus} />
-        </div>
-        <div className="flex items-center gap-2">
-          {/* 心路历程按钮 - 有已完成局时显示 */}
-          {roundHistory.length > 0 && (
-            <button
-              onClick={() => toggleThoughtDrawer()}
-              className="text-[var(--color-secondary)]/70 hover:text-[var(--color-secondary)] text-sm transition-colors cursor-pointer"
-              title="查看 AI 心路历程"
-            >
-              心路历程
-            </button>
-          )}
-          {status === 'finished' ? (
-            <button
-              onClick={() => navigate(`/result/${effectiveGameId}`)}
-              className="text-[var(--color-gold)] hover:text-[var(--color-gold)] text-sm transition-colors cursor-pointer"
-            >
-              查看结果
-            </button>
-          ) : (
-            <button
-              onClick={handleEndGame}
-              className="text-[var(--color-gold)] hover:text-[var(--color-gold)] text-sm transition-colors cursor-pointer"
-            >
-              结束游戏
-            </button>
-          )}
-        </div>
-      </header>
-
+    <div className="h-screen bg-[var(--bg-deepest)] flex flex-col overflow-hidden">
       {/* 牌桌 + 聊天区域 */}
       <main className="flex-1 relative min-h-0 flex">
         {/* 牌桌区域 */}
         <div className="flex-1 relative min-w-0 overflow-hidden">
+          {/* 环境氛围光效 — 柔和的四角渐变 */}
+          <div className="absolute inset-0 pointer-events-none z-0" aria-hidden="true">
+            <div
+              className="absolute inset-0"
+              style={{
+                background: `
+                  radial-gradient(ellipse at 10% 10%, rgba(0,180,140,0.08) 0%, transparent 50%),
+                  radial-gradient(ellipse at 90% 90%, rgba(180,50,70,0.06) 0%, transparent 50%),
+                  radial-gradient(ellipse at 90% 10%, rgba(100,70,200,0.04) 0%, transparent 40%),
+                  radial-gradient(ellipse at 10% 90%, rgba(100,70,200,0.04) 0%, transparent 40%)
+                `,
+              }}
+            />
+          </div>
+
           <TableLayout className="w-full h-full" />
 
-          {/* 行动日志 - 左上角浮层 */}
-          <div className="absolute top-2 left-2 w-64 z-10">
+          {/* 浮动顶部栏 */}
+          <header className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-1.5 bg-black/40 backdrop-blur-sm border-b border-white/[0.04]">
+            <button
+              onClick={handleBackToLobby}
+              className="text-[var(--text-muted)] hover:text-[var(--color-primary)] text-xs transition-colors cursor-pointer"
+            >
+              ← 返回
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-[var(--text-muted)] text-[10px] font-mono">
+                {effectiveGameId.slice(0, 8)}
+              </span>
+              <ConnectionIndicator status={connectionStatus} />
+            </div>
+            <div className="flex items-center gap-2">
+              {roundHistory.length > 0 && (
+                <button
+                  onClick={() => toggleThoughtDrawer()}
+                  className="text-[var(--color-secondary)]/60 hover:text-[var(--color-secondary)] text-xs transition-colors cursor-pointer"
+                  title="查看 AI 心路历程"
+                >
+                  心路历程
+                </button>
+              )}
+              {status === 'finished' ? (
+                <button
+                  onClick={() => navigate(`/result/${effectiveGameId}`)}
+                  className="text-[var(--color-gold)]/80 hover:text-[var(--color-gold)] text-xs transition-colors cursor-pointer"
+                >
+                  查看结果
+                </button>
+              ) : (
+                <button
+                  onClick={handleEndGame}
+                  className="text-[var(--color-gold)]/60 hover:text-[var(--color-gold)] text-xs transition-colors cursor-pointer"
+                >
+                  结束
+                </button>
+              )}
+            </div>
+          </header>
+
+          {/* 行动日志 - 右上角浮层 */}
+          <div className="absolute top-10 right-2 w-52 z-10">
             <GameLog />
           </div>
         </div>
@@ -199,7 +355,6 @@ export default function GamePage() {
             ${isChatPanelExpanded ? 'w-72' : 'w-8'}
           `}
         >
-          {/* 折叠/展开按钮 */}
           <button
             onClick={toggleChatPanel}
             className="absolute -left-3 top-1/2 -translate-y-1/2 z-10
@@ -215,21 +370,16 @@ export default function GamePage() {
 
           {isChatPanelExpanded && (
             <>
-              {/* 聊天标题栏 */}
               <div className="px-3 py-2 border-b border-[var(--border-default)] flex items-center justify-between">
                 <h3 className="text-xs font-medium text-[var(--color-primary)]/80">牌桌聊天</h3>
                 <span className="text-[10px] text-[var(--text-muted)]">
                   {chatMessages.length} 条消息
                 </span>
               </div>
-
-              {/* 消息列表 */}
               <ChatPanel
                 messages={chatMessages}
                 className="flex-1 min-h-0 py-1"
               />
-
-              {/* 输入框 */}
               <ChatInput
                 onSend={sendChatMessage}
                 disabled={connectionStatus !== 'connected'}
@@ -240,28 +390,10 @@ export default function GamePage() {
         </div>
       </main>
 
-      {/* 底部操作区域：人类手牌 + 操作按钮 */}
-      <footer className="shrink-0 bg-[var(--bg-deep)]/80 backdrop-blur-md border-t border-[var(--border-default)] relative z-20">
-        {/* 人类玩家手牌行（仅在牌局进行中且玩家有牌时显示） */}
-        {showMyCards && (
-          <div className="flex items-center justify-center gap-3 pt-2 pb-1 border-b border-[var(--border-default)]">
-            <CardHand
-              cards={myCards}
-              faceUp={hasLookedAtCards}
-              size="sm"
-              clickable={!!canLookAtCards}
-              onClick={canLookAtCards ? handleLookAtCards : undefined}
-              fanAngle={6}
-            />
-            {canLookAtCards && (
-              <span className="text-[10px] text-[var(--color-gold)]/70 animate-pulse">
-                点击看牌
-              </span>
-            )}
-          </div>
-        )}
+      {/* 底部操作区域 — 更紧凑，与牌桌视觉融合 */}
+      <footer className="shrink-0 bg-black/60 backdrop-blur-md border-t border-white/[0.06] relative z-20">
         {/* 操作按钮行 */}
-        <div className="h-16 flex items-center justify-center gap-4">
+        <div className="h-14 flex items-center justify-center gap-4">
           {canStartRound && (
             <button
               onClick={sendStartRound}
@@ -286,10 +418,7 @@ export default function GamePage() {
         </div>
       </footer>
 
-      {/* 心路历程抽屉 */}
       <ThoughtDrawer />
-
-      {/* Copilot 错误弹窗 */}
       <CopilotErrorModal />
     </div>
   )

@@ -18,15 +18,15 @@ export default function PotDisplay({
   className = '',
 }: PotDisplayProps) {
   return (
-    <div className={`flex flex-col items-center gap-2 ${className}`}>
+    <div className={`flex flex-col items-center gap-3 ${className}`}>
       {/* 底池金额 */}
       <div className="relative">
         {/* 筹码图标堆叠 */}
-        <div className="flex items-center justify-center gap-1 mb-1">
+        <div className="flex items-center justify-center gap-1 mb-1.5">
           {generateChipStack(pot)}
         </div>
 
-        {/* 底池数字 */}
+        {/* 底池数字 — 更大更显眼 */}
         <AnimatePresence mode="wait">
           <motion.div
             key={pot}
@@ -34,11 +34,11 @@ export default function PotDisplay({
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.8, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="bg-[var(--bg-deep)]/80 backdrop-blur-sm rounded-full px-4 py-1.5 border border-[var(--color-gold)]/30 shadow-[0_0_20px_rgba(255,215,0,0.1)]"
+            className="bg-black/50 backdrop-blur-sm rounded-full px-5 py-2 border border-[var(--color-gold)]/30 shadow-[0_0_30px_rgba(255,215,0,0.12)]"
           >
-            <div className="flex items-center gap-1.5">
-              <ChipIcon className="w-4 h-4 text-[var(--color-gold)]" />
-              <span className="neon-text-gold font-bold text-lg tabular-nums">
+            <div className="flex items-center gap-2">
+              <ChipIcon className="w-5 h-5 text-[var(--color-gold)]" />
+              <span className="neon-text-gold font-bold text-2xl tabular-nums tracking-wide">
                 {pot.toLocaleString()}
               </span>
             </div>

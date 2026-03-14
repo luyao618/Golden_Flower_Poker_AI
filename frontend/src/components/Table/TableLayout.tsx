@@ -20,24 +20,23 @@ interface TableLayoutProps {
 /**
  * 计算 2-6 人在椭圆形牌桌上的座位位置
  *
- * 坐标系：百分比 (0-100)，(50, 50) 为椭圆中心
- * 玩家（人类）固定在底部中央 (50, 88)
+ * 坐标系：百分比 (0-100)，(50, 50) 为中心
+ * 玩家（人类）固定在底部中央
  *
- * 椭圆参数：
- *   水平半径 a = 40（横向分布更宽）
- *   垂直半径 b = 35（纵向稍紧凑）
- *   中心 (50, 48)
+ * 现在牌桌用纯 CSS 画，占据约 90% 的容器空间（padding 5%）
+ * 牌桌皮革边框约 5-6% 宽 → 座位应在边框上
+ * 椭圆 rx ≈ 42, ry ≈ 40 让座位刚好在边框上
  *
  * 座位从底部（人类）开始，逆时针均匀分布
  */
 function calculateSeatPositions(
   playerCount: number
 ): Array<{ x: number; y: number }> {
-  // 椭圆参数
-  const cx = 50 // 中心 X
-  const cy = 48 // 中心 Y（稍偏上，给底部操作面板留空间）
-  const rx = 40 // 水平半径
-  const ry = 35 // 垂直半径
+  // 椭圆参数 — 匹配 CSS 牌桌的边缘
+  const cx = 50
+  const cy = 50
+  const rx = 43  // 水平半径 — 座位在皮革边框上
+  const ry = 40  // 垂直半径
 
   // 人类玩家固定在底部中央（角度 = 90度 = π/2，即椭圆底部）
   const startAngle = Math.PI / 2
@@ -46,10 +45,9 @@ function calculateSeatPositions(
 
   for (let i = 0; i < playerCount; i++) {
     // 从底部开始，顺时针均匀分布
-    // 角度递增 = 2π / playerCount
     const angle = startAngle + (i * 2 * Math.PI) / playerCount
 
-    const x = cx - rx * Math.cos(angle) // 负号使其顺时针
+    const x = cx - rx * Math.cos(angle)
     const y = cy + ry * Math.sin(angle)
 
     positions.push({
@@ -69,7 +67,6 @@ function reorderPlayersHumanFirst(players: Player[]): Player[] {
   const humanIndex = players.findIndex((p) => p.player_type === 'human')
   if (humanIndex <= 0) return players
 
-  // 旋转数组，使人类玩家排在第一位，保持其他玩家的相对顺序
   return [...players.slice(humanIndex), ...players.slice(0, humanIndex)]
 }
 
@@ -77,7 +74,7 @@ function reorderPlayersHumanFirst(players: Player[]): Player[] {
  * 椭圆形牌桌布局组件
  *
  * 功能：
- * - 中央绿色椭圆牌桌
+ * - 3D 牌桌俯视图背景（table-bg.png）
  * - 底池筹码显示（牌桌中央）
  * - 2-6 人环形座位布局
  * - 人类玩家固定在底部
@@ -110,7 +107,6 @@ export default function TableLayout({ className = '' }: TableLayoutProps) {
   // 每个玩家的最新非系统聊天消息（用于头顶气泡）
   const latestMessageByPlayer = useMemo(() => {
     const map: Record<string, ChatMessage> = {}
-    // 正向遍历，后面的消息覆盖前面的
     for (const msg of chatMessages) {
       if (msg.message_type !== 'system_message') {
         map[msg.player_id] = msg
@@ -167,34 +163,60 @@ export default function TableLayout({ className = '' }: TableLayoutProps) {
 
   return (
     <div className={`relative w-full h-full ${className}`}>
-      {/* 椭圆形牌桌 */}
-      <div className="absolute inset-[5%]">
-        {/* 牌桌 - 霓虹发光边框 */}
-        <div className="w-full h-full rounded-[50%] p-[2px] shadow-2xl"
+      {/* ====== CSS 牌桌 ====== */}
+      {/* 外层 — 皮革边框（stadium / oblong 圆角矩形） */}
+      <div
+        className="absolute"
+        style={{
+          left: '4%',
+          right: '4%',
+          top: '4%',
+          bottom: '4%',
+          borderRadius: '9999px',
+          /* 皮革灰色渐变 + 微妙纹理 */
+          background: `
+            radial-gradient(ellipse at 50% 20%, rgba(100,100,110,0.9) 0%, rgba(55,55,65,0.95) 60%, rgba(35,35,45,1) 100%)
+          `,
+          boxShadow: `
+            0 8px 40px rgba(0,0,0,0.7),
+            0 2px 15px rgba(0,0,0,0.5),
+            inset 0 2px 4px rgba(255,255,255,0.08),
+            inset 0 -2px 4px rgba(0,0,0,0.4)
+          `,
+        }}
+      >
+        {/* 内层 — 桌面绒布区域 */}
+        <div
+          className="absolute"
           style={{
-            background: 'linear-gradient(135deg, rgba(0,212,255,0.5), rgba(139,92,246,0.3), rgba(0,212,255,0.5))',
-            boxShadow: '0 0 40px rgba(0,212,255,0.15), 0 0 80px rgba(0,212,255,0.05)'
-          }}>
-          {/* 内层 - 深蓝灰毡面 */}
-          <div className="w-full h-full rounded-[50%] flex items-center justify-center relative overflow-hidden"
-            style={{
-              background: 'linear-gradient(135deg, #0d1b2a, #162035, #0d1b2a)'
-            }}>
-            {/* 微妙的桌面纹理/光泽 */}
-            <div className="absolute inset-0 rounded-[50%] opacity-20"
-              style={{
-                backgroundImage: 'radial-gradient(circle at 30% 40%, rgba(0,212,255,0.05) 0%, transparent 50%), radial-gradient(circle at 70% 60%, rgba(139,92,246,0.03) 0%, transparent 40%)'
-              }}
-            />
+            left: '5.5%',
+            right: '5.5%',
+            top: '8%',
+            bottom: '8%',
+            borderRadius: '9999px',
+            /* 深蓝色桌面绒布 */
+            background: `
+              radial-gradient(ellipse at 50% 40%, rgba(25,40,60,1) 0%, rgba(15,25,45,1) 50%, rgba(10,18,35,1) 100%)
+            `,
+            /* 霓虹内边线 — 用 border + box-shadow */
+            border: '1.5px solid rgba(0, 212, 255, 0.5)',
+            boxShadow: `
+              0 0 8px rgba(0,212,255,0.25),
+              0 0 20px rgba(0,212,255,0.12),
+              inset 0 0 30px rgba(0,212,255,0.04),
+              inset 0 0 60px rgba(0,0,0,0.3)
+            `,
+          }}
+        />
+      </div>
 
-              {/* 牌桌中央内容 - 底池 */}
-              <PotDisplay
-                pot={pot}
-                currentBet={currentBet}
-                roundNumber={roundNumber}
-              />
-            </div>
-          </div>
+      {/* 牌桌中央内容 - 底池 */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[5]">
+        <PotDisplay
+          pot={pot}
+          currentBet={currentBet}
+          roundNumber={roundNumber}
+        />
       </div>
 
       {/* 玩家座位 */}
