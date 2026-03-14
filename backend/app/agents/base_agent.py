@@ -223,7 +223,7 @@ class BaseAgent:
 
         # ---- Copilot 路径 ----
         if provider == "github_copilot":
-            return await self._call_copilot(model_name, messages, temp)
+            return await self._call_copilot(model_name, messages, temp, fmt)
 
         # ---- LiteLLM 路径 ----
         # 设置 API keys（LiteLLM 会根据模型自动选择对应的 key）
@@ -276,6 +276,7 @@ class BaseAgent:
         model_name: str,
         messages: list[dict[str, str]],
         temperature: float,
+        response_format: dict | None = None,
     ) -> str:
         """通过 Copilot API 调用 LLM
 
@@ -302,6 +303,7 @@ class BaseAgent:
                     model=model_name,
                     messages=messages,
                     temperature=temperature,
+                    response_format=response_format,
                 )
 
                 logger.info("[%s] Copilot API call succeeded on attempt %d", self.name, attempt)
