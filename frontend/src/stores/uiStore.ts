@@ -122,7 +122,7 @@ export const useUIStore = create<UIState>((set) => ({
   isThoughtDrawerOpen: false,
   thoughtDrawerAgentId: null,
   isGameLogExpanded: true,
-  isChatPanelExpanded: true,
+  isChatPanelExpanded: false,
 
   // Actions
   setSelectedPlayer: (playerId) =>
