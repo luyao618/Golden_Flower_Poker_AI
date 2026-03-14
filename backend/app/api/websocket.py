@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.agent_manager import AgentManager, get_agent_manager
 from app.agents.base_agent import BaseAgent, ThoughtData
+from app.agents.base_agent import LLMCallError
 from app.agents.chat_engine import (
     ChatEngine,
     TriggerEvent,
@@ -331,6 +332,22 @@ def event_error(message: str) -> dict[str, Any]:
     }
 
 
+def event_copilot_error(
+    message: str, error_code: str = "copilot_subscription_error"
+) -> dict[str, Any]:
+    """copilot_error 事件 — Copilot 订阅/授权错误
+
+    前端收到此事件后应弹窗提示用户切换账号重新登录。
+    """
+    return {
+        "type": "copilot_error",
+        "data": {
+            "message": message,
+            "error_code": error_code,
+        },
+    }
+
+
 # ---- AI Turn Processing ----
 
 
@@ -423,6 +440,25 @@ async def process_ai_turns(
         chat_msgs_for_prompt = _format_chat_for_agent(chat_context)
         try:
             decision = await agent.make_decision(game, current_player, chat_msgs_for_prompt)
+        except LLMCallError as e:
+            if e.error_code == "copilot_subscription_error":
+                # Copilot 订阅错误 — 广播特殊事件通知前端弹窗
+                logger.error(
+                    "Copilot subscription error for %s: %s",
+                    current_player.name,
+                    e,
+                )
+                await ws_manager.broadcast(
+                    game_id,
+                    event_copilot_error(str(e), e.error_code),
+                )
+            else:
+                logger.error(
+                    "AI decision failed for %s: %s, auto-folding",
+                    current_player.name,
+                    e,
+                )
+            decision = None
         except Exception as e:
             logger.error(
                 "AI decision failed for %s: %s, auto-folding",

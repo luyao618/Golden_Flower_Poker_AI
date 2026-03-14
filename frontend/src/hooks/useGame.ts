@@ -84,6 +84,11 @@ interface ErrorData {
   message: string
 }
 
+interface CopilotErrorData {
+  message: string
+  error_code: string
+}
+
 // ---- Hook 配置 ----
 
 interface UseGameConfig {
@@ -133,6 +138,7 @@ export function useGame(config: UseGameConfig | null): UseGameReturn {
   const startWinAnimation = useUIStore((s) => s.startWinAnimation)
   const setShowPlayerCards = useUIStore((s) => s.setShowPlayerCards)
   const setHasLookedAtCards = useUIStore((s) => s.setHasLookedAtCards)
+  const setCopilotError = useUIStore((s) => s.setCopilotError)
 
   // ---- Server event handler ----
 
@@ -369,6 +375,17 @@ export function useGame(config: UseGameConfig | null): UseGameReturn {
           break
         }
 
+        // ---- copilot_error: Copilot API 错误（如 403 订阅问题）----
+        case 'copilot_error': {
+          const data = event.data as CopilotErrorData
+          console.error('[Game] Copilot error:', data.error_code, data.message)
+          setCopilotError({
+            message: data.message,
+            errorCode: data.error_code,
+          })
+          break
+        }
+
         default:
           console.warn('[Game] Unknown server event type:', event.type)
       }
@@ -392,6 +409,7 @@ export function useGame(config: UseGameConfig | null): UseGameReturn {
       startWinAnimation,
       setShowPlayerCards,
       setHasLookedAtCards,
+      setCopilotError,
     ],
   )
 

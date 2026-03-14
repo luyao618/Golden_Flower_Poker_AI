@@ -244,6 +244,13 @@ class CopilotAuthManager:
                 self._github_token = ""
                 raise CopilotAuthError("GitHub token expired, please reconnect")
 
+            if resp.status_code == 403:
+                raise CopilotSubscriptionError(
+                    "您的 GitHub 账号可能使用的是组织管理的 Copilot Business 许可证，"
+                    "GitHub 不允许非官方客户端使用此类型的授权。\n"
+                    "请使用拥有个人 Copilot Individual/Pro 订阅的 GitHub 账号重新登录。"
+                )
+
             if resp.status_code != 200:
                 raise CopilotAuthError(
                     f"Failed to get Copilot token: {resp.status_code} {resp.text}"
@@ -373,6 +380,12 @@ class CopilotAuthManager:
                     model,
                     resp.text[:500],
                 )
+                if resp.status_code == 403:
+                    raise CopilotSubscriptionError(
+                        "您的 GitHub 账号可能使用的是组织管理的 Copilot Business 许可证，"
+                        "GitHub 不允许非官方客户端使用此类型的授权。\n"
+                        "请使用拥有个人 Copilot Individual/Pro 订阅的 GitHub 账号重新登录。"
+                    )
                 raise CopilotAPIError(f"Copilot API error: {resp.status_code} {resp.text}")
 
             data = resp.json()
@@ -435,6 +448,16 @@ class CopilotAuthError(Exception):
 
 class CopilotAPIError(Exception):
     """Copilot API 调用错误"""
+
+    pass
+
+
+class CopilotSubscriptionError(CopilotAPIError):
+    """Copilot 订阅/授权错误 (403)
+
+    当用户的 GitHub 账号是组织管理的 Copilot Business 许可证时，
+    GitHub 会对非官方客户端返回 403。需要使用个人 Copilot 订阅账号。
+    """
 
     pass
 
