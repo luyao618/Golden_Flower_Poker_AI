@@ -369,6 +369,7 @@ export type ServerEventType =
   | 'ai_thinking'
   | 'ai_reviewing'
   | 'error'
+  | 'copilot_error'
 
 export interface ServerEvent<T = unknown> {
   type: ServerEventType

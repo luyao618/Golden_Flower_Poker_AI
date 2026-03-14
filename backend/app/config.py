@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
@@ -115,6 +117,7 @@ AI_AVATARS = [
 ]
 
 
+@lru_cache()
 def get_settings() -> Settings:
     """获取应用配置（单例模式）"""
     return Settings()

@@ -2,7 +2,7 @@
 // 游戏配置表单 - AI 对手数量选择 + 模型选择
 // ============================================================
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 
 /** AI 性格选项 */
@@ -36,9 +36,11 @@ export default function GameConfigForm() {
     fetchModels,
   } = useGameStore()
 
-  // 加载可用模型列表
+  // 加载可用模型列表（仅首次加载）
+  const hasFetched = useRef(false)
   useEffect(() => {
-    if (availableModels.length === 0 && !modelsLoading) {
+    if (!hasFetched.current && availableModels.length === 0 && !modelsLoading) {
+      hasFetched.current = true
       fetchModels()
     }
   }, [availableModels.length, modelsLoading, fetchModels])

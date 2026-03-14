@@ -223,7 +223,7 @@ class BaseAgent:
 
         # ---- Copilot 路径 ----
         if provider == "github_copilot":
-            return await self._call_copilot(model_name, messages, temp)
+            return await self._call_copilot(model_name, messages, temp, fmt)
 
         # ---- LiteLLM 路径 ----
         # 设置 API keys（LiteLLM 会根据模型自动选择对应的 key）
@@ -276,13 +276,19 @@ class BaseAgent:
         model_name: str,
         messages: list[dict[str, str]],
         temperature: float,
+        response_format: dict | None = None,
     ) -> str:
         """通过 Copilot API 调用 LLM
 
         绕过 LiteLLM，直接使用 CopilotAuthManager 调用 Copilot Chat API。
         包含重试逻辑。
         """
-        from app.services.copilot_auth import get_copilot_auth, CopilotAuthError, CopilotAPIError
+        from app.services.copilot_auth import (
+            get_copilot_auth,
+            CopilotAuthError,
+            CopilotAPIError,
+            CopilotSubscriptionError,
+        )
 
         settings = get_settings()
         copilot = get_copilot_auth()
@@ -302,11 +308,16 @@ class BaseAgent:
                     model=model_name,
                     messages=messages,
                     temperature=temperature,
+                    response_format=response_format,
                 )
 
                 logger.info("[%s] Copilot API call succeeded on attempt %d", self.name, attempt)
                 return content
 
+            except CopilotSubscriptionError as e:
+                # 订阅/授权问题 (403) 不需要重试，直接抛出
+                logger.error("[%s] Copilot subscription error (403): %s", self.name, str(e))
+                raise LLMCallError(str(e), error_code="copilot_subscription_error") from e
             except (CopilotAuthError, CopilotAPIError) as e:
                 last_error = e
                 logger.warning(
@@ -475,6 +486,9 @@ class BaseAgent:
             raw_response = await self.call_llm(messages)
             decision = self.parse_decision_response(raw_response, available_actions)
         except LLMCallError as e:
+            # Copilot 订阅错误需要向上传播，让 WebSocket 层发送弹窗事件
+            if e.error_code == "copilot_subscription_error":
+                raise
             logger.error("[%s] LLM call failed, using fallback: %s", self.name, e)
             fallback_action = self._get_fallback_action(available_actions)
             decision = Decision(
@@ -795,9 +809,17 @@ class BaseAgent:
 
 
 class LLMCallError(Exception):
-    """LLM 调用失败异常"""
+    """LLM 调用失败异常
 
-    pass
+    Attributes:
+        error_code: 错误分类码，用于前端区分错误类型
+            - "copilot_subscription_error": Copilot 订阅/授权问题 (403)
+            - "llm_error": 其他 LLM 调用失败
+    """
+
+    def __init__(self, message: str, error_code: str = "llm_error") -> None:
+        super().__init__(message)
+        self.error_code = error_code
 
 
 # ---- 辅助函数 ----

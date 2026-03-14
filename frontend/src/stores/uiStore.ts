@@ -27,6 +27,15 @@ export interface WinAnimationState {
   isPlaying: boolean
 }
 
+// ---- Copilot 错误状态 ----
+
+export interface CopilotErrorState {
+  /** 错误消息 */
+  message: string
+  /** 错误码 */
+  errorCode: string
+}
+
 // ---- UI 状态 ----
 
 export interface UIState {
@@ -58,6 +67,9 @@ export interface UIState {
   // 人类玩家是否已看牌（触发翻牌动画）
   hasLookedAtCards: boolean
 
+  // Copilot 错误弹窗
+  copilotError: CopilotErrorState | null
+
   // 心路历程抽屉
   isThoughtDrawerOpen: boolean
   thoughtDrawerAgentId: string | null
@@ -83,6 +95,7 @@ export interface UIState {
   clearWinAnimation: () => void
   setShowPlayerCards: (show: boolean) => void
   setHasLookedAtCards: (looked: boolean) => void
+  setCopilotError: (error: CopilotErrorState | null) => void
   toggleThoughtDrawer: (agentId?: string) => void
   toggleGameLog: () => void
   toggleChatPanel: () => void
@@ -105,6 +118,7 @@ export const useUIStore = create<UIState>((set) => ({
   winAnimation: null,
   showPlayerCards: false,
   hasLookedAtCards: false,
+  copilotError: null,
   isThoughtDrawerOpen: false,
   thoughtDrawerAgentId: null,
   isGameLogExpanded: true,
@@ -168,6 +182,9 @@ export const useUIStore = create<UIState>((set) => ({
   setHasLookedAtCards: (looked) =>
     set({ hasLookedAtCards: looked }),
 
+  setCopilotError: (error) =>
+    set({ copilotError: error }),
+
   toggleThoughtDrawer: (agentId) =>
     set((state) => ({
       isThoughtDrawerOpen: agentId
@@ -195,6 +212,7 @@ export const useUIStore = create<UIState>((set) => ({
       winAnimation: null,
       showPlayerCards: false,
       hasLookedAtCards: false,
+      copilotError: null,
       isThoughtDrawerOpen: false,
       thoughtDrawerAgentId: null,
     }),

@@ -7,6 +7,7 @@ import ChatInput from '../components/Table/ChatInput'
 import GameLog from '../components/Table/GameLog'
 import CardHand from '../components/Cards/CardHand'
 import { ThoughtDrawer } from '../components/Thought'
+import CopilotErrorModal from '../components/CopilotErrorModal'
 import { useGameStore } from '../stores/gameStore'
 import { useUIStore } from '../stores/uiStore'
 import { useGame } from '../hooks/useGame'
@@ -286,6 +287,9 @@ export default function GamePage() {
 
       {/* 心路历程抽屉 */}
       <ThoughtDrawer />
+
+      {/* Copilot 错误弹窗 */}
+      <CopilotErrorModal />
     </div>
   )
 }

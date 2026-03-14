@@ -81,11 +81,11 @@ export default function PlayerSeat({
   isMe,
   isDealer,
   latestMessage,
-  myCards = [],
-  onLookAtCards,
+  myCards: _myCards = [],
+  onLookAtCards: _onLookAtCards,
   onClick,
 }: PlayerSeatProps) {
-  const { isCompareMode, thinkingPlayerId, reviewingPlayerId, showPlayerCards, hasLookedAtCards, toggleThoughtDrawer } = useUIStore()
+  const { isCompareMode, thinkingPlayerId, reviewingPlayerId, showPlayerCards, hasLookedAtCards: _hasLookedAtCards, toggleThoughtDrawer } = useUIStore()
 
   const isFolded = player.status === 'folded'
   const isOut = player.status === 'out'

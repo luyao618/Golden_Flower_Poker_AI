@@ -244,6 +244,13 @@ class CopilotAuthManager:
                 self._github_token = ""
                 raise CopilotAuthError("GitHub token expired, please reconnect")
 
+            if resp.status_code == 403:
+                raise CopilotSubscriptionError(
+                    "您的 GitHub 账号可能使用的是组织管理的 Copilot Business 许可证，"
+                    "GitHub 不允许非官方客户端使用此类型的授权。\n"
+                    "请使用拥有个人 Copilot Individual/Pro 订阅的 GitHub 账号重新登录。"
+                )
+
             if resp.status_code != 200:
                 raise CopilotAuthError(
                     f"Failed to get Copilot token: {resp.status_code} {resp.text}"
@@ -282,6 +289,7 @@ class CopilotAuthManager:
         messages: list[dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        response_format: dict | None = None,
     ) -> str:
         """调用 Copilot Chat Completions API
 
@@ -290,6 +298,7 @@ class CopilotAuthManager:
             messages: OpenAI 格式的消息列表
             temperature: 生成温度
             max_tokens: 最大生成 token 数
+            response_format: 响应格式 (e.g., {"type": "json_object"})
 
         Returns:
             LLM 响应文本
@@ -316,13 +325,16 @@ class CopilotAuthManager:
             "X-Request-Id": str(uuid.uuid4()),
         }
 
-        body = {
+        body: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": False,
         }
+
+        if response_format is not None:
+            body["response_format"] = response_format
 
         async with httpx.AsyncClient() as client:
             try:
@@ -340,18 +352,40 @@ class CopilotAuthManager:
             if resp.status_code == 401:
                 # 令牌过期，尝试刷新后重试一次
                 logger.warning("Copilot token expired, refreshing...")
-                await self._fetch_copilot_token()
+                try:
+                    await self._fetch_copilot_token()
+                except CopilotAuthError as auth_err:
+                    raise CopilotAPIError(
+                        f"Token refresh failed during 401 retry: {auth_err}"
+                    ) from auth_err
                 token = self._copilot_token.token
                 headers["Authorization"] = f"Bearer {token}"
 
-                resp = await client.post(
-                    chat_url,
-                    json=body,
-                    headers=headers,
-                    timeout=60.0,
-                )
+                try:
+                    resp = await client.post(
+                        chat_url,
+                        json=body,
+                        headers=headers,
+                        timeout=60.0,
+                    )
+                except httpx.TimeoutException:
+                    raise CopilotAPIError("Copilot API request timed out on retry")
+                except httpx.ConnectError:
+                    raise CopilotAPIError("Failed to connect to Copilot API on retry")
 
             if resp.status_code != 200:
+                logger.error(
+                    "Copilot API error: status=%d, model=%s, body=%s",
+                    resp.status_code,
+                    model,
+                    resp.text[:500],
+                )
+                if resp.status_code == 403:
+                    raise CopilotSubscriptionError(
+                        "您的 GitHub 账号可能使用的是组织管理的 Copilot Business 许可证，"
+                        "GitHub 不允许非官方客户端使用此类型的授权。\n"
+                        "请使用拥有个人 Copilot Individual/Pro 订阅的 GitHub 账号重新登录。"
+                    )
                 raise CopilotAPIError(f"Copilot API error: {resp.status_code} {resp.text}")
 
             data = resp.json()
@@ -414,6 +448,16 @@ class CopilotAuthError(Exception):
 
 class CopilotAPIError(Exception):
     """Copilot API 调用错误"""
+
+    pass
+
+
+class CopilotSubscriptionError(CopilotAPIError):
+    """Copilot 订阅/授权错误 (403)
+
+    当用户的 GitHub 账号是组织管理的 Copilot Business 许可证时，
+    GitHub 会对非官方客户端返回 403。需要使用个人 Copilot 订阅账号。
+    """
 
     pass
 
