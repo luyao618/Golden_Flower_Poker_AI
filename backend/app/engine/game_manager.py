@@ -574,7 +574,7 @@ def get_visible_state(game: GameState, viewer_id: str) -> dict:
     Returns:
         过滤后的游戏状态字典
     """
-    state = game.model_dump()
+    state = game.model_dump(mode="json")
 
     for player_data in state["players"]:
         if player_data["id"] != viewer_id:

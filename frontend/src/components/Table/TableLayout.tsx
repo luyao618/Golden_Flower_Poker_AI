@@ -27,19 +27,19 @@ interface SeatPositionSet {
 /**
  * 5 个固定的 AI 座位位置（从左到右）
  *
- * 角色 y=62：桌面远边缘大约在背景图 60% 高度处，
- *           角色锚点对齐到这里，配合 translate(-50%, -85%)
- *           形成角色下半身被桌子遮挡的"坐在桌边"视觉效果
- * 牌 y=68：  牌放在桌面上，远端位置
- * x 均匀分布：13%, 30%, 50%, 70%, 87%
- * y 带微弧度：两侧稍低（透视效果）
+  * 角色 y≈30-33%：桌面内侧，角色锚点对齐到这里，
+  *                配合 translate(-50%, -85%) 形成角色上半身在桌外、
+  *                下半身被桌子遮挡的"坐在桌边"视觉效果
+  * 牌 y≈36-39%：  牌放在桌面上，紧贴角色下方
+  * x 均匀分布：15%, 30%, 50%, 70%, 85%
+  * y 带微弧度：两侧稍低（透视效果）
  */
 const FIXED_AI_SEATS: SeatPositionSet[] = [
-  { card: { x: 13, y: 69 }, character: { x: 13, y: 63 } },
-  { card: { x: 30, y: 68 }, character: { x: 30, y: 62 } },
-  { card: { x: 50, y: 67 }, character: { x: 50, y: 61 } },  // 中间稍高（透视）
-  { card: { x: 70, y: 68 }, character: { x: 70, y: 62 } },
-  { card: { x: 87, y: 69 }, character: { x: 87, y: 63 } },
+  { card: { x: 19, y: 57 }, character: { x: 19, y: 51 } },
+  { card: { x: 32, y: 55 }, character: { x: 32, y: 49 } },
+  { card: { x: 45, y: 55 }, character: { x: 45, y: 49 } },  // 中间稍高（透视）
+  { card: { x: 58, y: 55 }, character: { x: 58, y: 49 } },
+  { card: { x: 71, y: 57 }, character: { x: 71, y: 51 } },
 ]
 
 /**
@@ -54,11 +54,11 @@ const FIXED_AI_SEATS: SeatPositionSet[] = [
  *   5 AI → [0, 1, 2, 3, 4]
  */
 const AI_SEAT_ASSIGNMENT: Record<number, number[]> = {
-  1: [2],
-  2: [1, 3],
-  3: [0, 2, 4],
-  4: [0, 1, 3, 4],
-  5: [0, 1, 2, 3, 4],
+  1: [2],        // 3号贴图
+  2: [1, 3],     // 2号、4号贴图
+  3: [1, 2, 3],  // 2号、3号、4号贴图（默认）
+  4: [1, 2, 3, 4], // 2号、3号、4号、5号贴图
+  5: [0, 1, 2, 3, 4], // 全部显示
 }
 
 function calculateSeatPositions(

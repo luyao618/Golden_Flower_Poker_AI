@@ -5,7 +5,7 @@ import '../../styles/cards.css'
 // CardFace - 单张拟物风格扑克牌
 // ============================================================
 
-export type CardSize = 'sm' | 'md' | 'lg' | 'xl'
+export type CardSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
 
 export interface CardFaceProps {
   /** 牌面数据，null 时显示牌背 */
