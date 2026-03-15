@@ -78,8 +78,9 @@ export default function PlayerSeat({
   const bubbleRefPos = characterPosition ?? cardPosition
   const bubblePosition = bubbleRefPos.y > 50 ? 'above' : 'below'
 
-  // 手牌偏移方向（朝桌面中心）
-  const cardOffset = getCardOffset(cardPosition)
+  // 手牌偏移方向（朝桌面中心）— 仅用于人类玩家
+  // AI 玩家的牌直接放在角色正下方，不偏移
+  const cardOffset = isHuman ? getCardOffset(cardPosition) : { x: 0, y: 0 }
 
   // 是否显示手牌
   const shouldShowCards = showPlayerCards && !isOut && !isFolded
@@ -136,7 +137,7 @@ export default function PlayerSeat({
               className={`relative ${!isCompareMode ? 'cursor-pointer' : ''}`}
               onClick={!isCompareMode ? () => toggleThoughtDrawer(player.id) : undefined}
               title={!isCompareMode ? `查看 ${player.name} 的心路历程` : undefined}
-              style={{ height: '25vh', maxHeight: '280px', minHeight: '140px' }}
+              style={{ height: '18vh', maxHeight: '200px', minHeight: '100px' }}
             >
               {/* 加载占位 */}
               {!charLoaded && (
@@ -264,8 +265,8 @@ export default function PlayerSeat({
             <CardHand
               cards={PLACEHOLDER_CARDS}
               faceUp={false}
-              size="sm"
-              fanAngle={6}
+              size="xs"
+              fanAngle={5}
             />
           )}
         </motion.div>

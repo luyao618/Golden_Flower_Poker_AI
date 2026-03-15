@@ -31,6 +31,7 @@ export interface CardHandProps {
 /** 根据 card size 获取默认的卡牌重叠偏移量 */
 function getDefaultOverlap(size: CardSize): number {
   switch (size) {
+    case 'xs': return 18
     case 'sm': return 24
     case 'md': return 32
     case 'lg': return 44
