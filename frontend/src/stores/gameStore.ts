@@ -178,7 +178,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   actionLog: [],
 
   playerName: '',
-  aiOpponents: [createDefaultAIOpponent(), createDefaultAIOpponent()],
+  aiOpponents: [createDefaultAIOpponent(), createDefaultAIOpponent(), createDefaultAIOpponent()],
   gameConfig: { ...DEFAULT_GAME_CONFIG },
 
   availableModels: [],
@@ -197,7 +197,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   addAIOpponent: () =>
     set((state) => {
-      if (state.aiOpponents.length >= 5) return state
+      if (state.aiOpponents.length >= 4) return state
       // 使用第一个可用模型作为默认值，避免使用不可用的硬编码模型
       const defaultModelId = state.availableModels.length > 0
         ? state.availableModels[0].id
@@ -330,7 +330,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       availableActions: [],
       actionLog: [],
       playerName: '',
-      aiOpponents: [createDefaultAIOpponent(), createDefaultAIOpponent()],
+      aiOpponents: [createDefaultAIOpponent(), createDefaultAIOpponent(), createDefaultAIOpponent()],
       gameConfig: { ...DEFAULT_GAME_CONFIG },
     }),
 

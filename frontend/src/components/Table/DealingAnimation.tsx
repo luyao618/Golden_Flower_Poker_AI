@@ -4,11 +4,11 @@ import { useUIStore } from '../../stores/uiStore'
 import CardFace from '../Cards/CardFace'
 
 // ============================================================
-// DealingAnimation - 发牌飞行动画
+// DealingAnimation - 荷官式发牌飞行动画
 //
-// 卡牌从牌桌中心（牌堆位置）依次飞向各玩家座位。
-// 发牌顺序模拟真实发牌：3 轮，每轮每人 1 张。
-// 使用 Framer Motion absolute positioning + left/top 动画。
+// 牌从桌面右侧（荷官位置）逐张沿弧线飞向各玩家座位。
+// 发牌顺序模拟真实发牌：3 轮，每轮每人 1 张，快速连发。
+// 每张牌带旋转、弧线轨迹和落地回弹效果。
 // ============================================================
 
 interface SeatPosition {
@@ -23,14 +23,14 @@ export interface DealingAnimationProps {
   playerCount: number
   /** 发牌完成回调 */
   onComplete?: () => void
-  /** 每张牌飞行时间（ms） */
-  cardFlyDuration?: number
-  /** 发牌间隔（ms） */
-  dealInterval?: number
 }
 
-/** 牌堆位置：牌桌中心 */
-const DECK_POSITION = { x: 50, y: 45 }
+/** 荷官位置：桌面右侧 */
+const DEALER_POSITION = { x: 88, y: 48 }
+
+/** 发牌节奏参数 */
+const DEAL_INTERVAL = 80   // 每张牌发出间隔（ms）
+const FLY_DURATION = 0.35  // 单张牌飞行时间（s）
 
 /** 单张飞行牌的状态 */
 interface FlyingCard {
@@ -38,14 +38,37 @@ interface FlyingCard {
   targetPlayerIndex: number
   cardIndex: number // 该玩家的第几张牌 (0, 1, 2)
   target: SeatPosition
+  /** 弧线偏移量（向上为负） */
+  arcOffset: number
+  /** 起始旋转角度 */
+  startRotation: number
+}
+
+/**
+ * 计算弧线偏移 — 根据目标相对荷官的方向，
+ * 让牌飞行时走一条自然的弧线而非直线
+ */
+function calcArcOffset(target: SeatPosition): number {
+  const dx = target.x - DEALER_POSITION.x
+  // 向左飞的牌弧线向上偏，向下飞的牌弧线幅度更大
+  const baseArc = -8
+  const directionBias = dx < 0 ? -3 : 0
+  return baseArc + directionBias
+}
+
+/**
+ * 计算起始旋转角度 — 模拟荷官甩牌的初始角度
+ * 向左飞的牌起始角度偏正（顺时针），向右偏负
+ */
+function calcStartRotation(target: SeatPosition): number {
+  const dx = target.x - DEALER_POSITION.x
+  return dx < 0 ? 15 : -10
 }
 
 export default function DealingAnimation({
   seatPositions,
   playerCount,
   onComplete,
-  cardFlyDuration = 300,
-  dealInterval = 100,
 }: DealingAnimationProps) {
   const { dealingAnimation } = useUIStore()
   const [visibleCards, setVisibleCards] = useState<FlyingCard[]>([])
@@ -61,11 +84,14 @@ export default function DealingAnimation({
     for (let round = 0; round < 3; round++) {
       for (let pIdx = 0; pIdx < playerCount; pIdx++) {
         if (seatPositions[pIdx]) {
+          const target = seatPositions[pIdx]
           seq.push({
             id: id++,
             targetPlayerIndex: pIdx,
             cardIndex: round,
-            target: seatPositions[pIdx],
+            target,
+            arcOffset: calcArcOffset(target),
+            startRotation: calcStartRotation(target),
           })
         }
       }
@@ -75,7 +101,6 @@ export default function DealingAnimation({
 
   // 启动或停止发牌动画
   useEffect(() => {
-    // 清理旧的定时器
     timersRef.current.forEach(clearTimeout)
     timersRef.current = []
 
@@ -93,12 +118,12 @@ export default function DealingAnimation({
     sequence.forEach((card, index) => {
       const timer = setTimeout(() => {
         setVisibleCards((prev) => [...prev, card])
-      }, index * dealInterval)
+      }, index * DEAL_INTERVAL)
       timersRef.current.push(timer)
     })
 
     // 所有牌发完后等飞行结束再回调
-    const totalTime = sequence.length * dealInterval + cardFlyDuration + 300
+    const totalTime = sequence.length * DEAL_INTERVAL + FLY_DURATION * 1000 + 200
     const completeTimer = setTimeout(() => {
       onCompleteRef.current?.()
     }, totalTime)
@@ -108,7 +133,7 @@ export default function DealingAnimation({
       timersRef.current.forEach(clearTimeout)
       timersRef.current = []
     }
-  }, [dealingAnimation.isDealing, buildDealSequence, dealInterval, cardFlyDuration])
+  }, [dealingAnimation.isDealing, buildDealSequence])
 
   // 牌飞行完毕
   const handleLanded = useCallback((cardId: number) => {
@@ -125,29 +150,30 @@ export default function DealingAnimation({
 
   return (
     <div className="absolute inset-0 pointer-events-none z-30">
-      {/* 牌堆（中心叠放的牌背） */}
+      {/* 荷官牌堆（右侧，略微倾斜） */}
       <AnimatePresence>
         {dealingAnimation.isDealing && (
           <motion.div
             className="absolute"
             style={{
-              left: `${DECK_POSITION.x}%`,
-              top: `${DECK_POSITION.y}%`,
-              transform: 'translate(-50%, -50%)',
+              left: `${DEALER_POSITION.x}%`,
+              top: `${DEALER_POSITION.y}%`,
+              transform: 'translate(-50%, -50%) rotate(-8deg)',
             }}
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.5, opacity: 0, transition: { duration: 0.3 } }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
+            initial={{ scale: 0, opacity: 0, rotate: -15 }}
+            animate={{ scale: 1, opacity: 1, rotate: -8 }}
+            exit={{ scale: 0.3, opacity: 0, transition: { duration: 0.25 } }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
           >
             <div className="relative">
-              {[2, 1, 0].map((i) => (
+              {/* 叠放的牌背 — 模拟荷官手中的牌叠 */}
+              {[4, 3, 2, 1, 0].map((i) => (
                 <div
                   key={i}
                   className="absolute"
                   style={{
-                    top: `${-i * 2}px`,
-                    left: `${i * 1.5}px`,
+                    top: `${-i * 1.5}px`,
+                    left: `${-i * 0.8}px`,
                     zIndex: i,
                   }}
                 >
@@ -167,8 +193,11 @@ export default function DealingAnimation({
       {visibleCards.map((card) => {
         if (completedCards.has(card.id)) return null
 
-        // 落点微调：根据 cardIndex 横向偏移，模拟扇形手牌
-        const spreadOffset = (card.cardIndex - 1) * 1.5 // -1.5%, 0%, +1.5%
+        // 落点微调：根据 cardIndex 横向偏移，模拟手牌排列
+        const spreadOffset = (card.cardIndex - 1) * 1.2
+
+        // 弧线中点 Y 偏移
+        const midY = (DEALER_POSITION.y + card.target.y + 9) / 2 + card.arcOffset
 
         return (
           <motion.div
@@ -176,24 +205,34 @@ export default function DealingAnimation({
             className="absolute"
             style={{ zIndex: 40 + card.id }}
             initial={{
-              left: `${DECK_POSITION.x}%`,
-              top: `${DECK_POSITION.y}%`,
+              left: `${DEALER_POSITION.x}%`,
+              top: `${DEALER_POSITION.y}%`,
               x: '-50%',
               y: '-50%',
-              scale: 1,
-              rotate: 0,
+              scale: 0.9,
+              rotate: card.startRotation,
+              opacity: 0.7,
             }}
             animate={{
               left: `${card.target.x + spreadOffset}%`,
               top: `${card.target.y + 9}%`,
               x: '-50%',
               y: '-50%',
-              scale: 0.8,
-              rotate: (card.cardIndex - 1) * 6, // 扇形旋转 -6°, 0°, 6°
+              scale: [0.9, 0.85, 0.75, 0.8],     // 飞行中缩小，落地微回弹
+              rotate: [card.startRotation, card.startRotation * 0.3, 0, 0],
+              opacity: [0.7, 1, 1, 1],
             }}
             transition={{
-              duration: cardFlyDuration / 1000,
-              ease: [0.22, 0.68, 0.35, 1.0], // custom ease-out curve
+              duration: FLY_DURATION,
+              ease: [0.2, 0.65, 0.35, 1.0],
+              // 弧线：top 使用自定义关键帧 timing
+              top: {
+                duration: FLY_DURATION,
+                ease: 'easeInOut',
+                times: [0, 0.4, 1],
+                // @ts-expect-error framer-motion supports keyframe arrays in animate
+                value: [`${DEALER_POSITION.y}%`, `${midY}%`, `${card.target.y + 9}%`],
+              },
             }}
             onAnimationComplete={() => handleLanded(card.id)}
           >

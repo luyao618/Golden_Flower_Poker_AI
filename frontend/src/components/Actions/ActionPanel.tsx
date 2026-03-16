@@ -174,7 +174,7 @@ export default function ActionPanel({ onAction }: ActionPanelProps) {
             <button
               onClick={() => executeAction(btn.action)}
               disabled={isProcessing}
-              className="px-3 py-2.5 rounded-lg text-sm font-bold
+              className="flex-1 px-2 py-2.5 rounded-lg text-xs font-bold whitespace-nowrap
                 bg-[var(--color-danger)]/20 text-[var(--color-danger)]
                 border border-[var(--color-danger)]/50
                 hover:bg-[var(--color-danger)]/30
@@ -184,7 +184,7 @@ export default function ActionPanel({ onAction }: ActionPanelProps) {
             </button>
             <button
               onClick={handleCancelConfirm}
-              className="px-2 py-2.5 rounded-lg text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+              className="px-2 py-2.5 rounded-lg text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer whitespace-nowrap"
             >
               取消
             </button>
@@ -194,7 +194,7 @@ export default function ActionPanel({ onAction }: ActionPanelProps) {
             onClick={() => handleActionClick(btn.action, btn.needsConfirm)}
             disabled={isProcessing}
             className={`
-              relative flex items-center justify-center gap-1.5 w-full h-full px-3 py-2.5 rounded-lg
+              relative flex items-center w-full h-full px-3 py-2.5 rounded-lg
               bg-white/[0.03] border ${accent.border}
               text-[var(--text-primary)]
               hover:bg-white/[0.08] hover:scale-[1.02]
@@ -204,9 +204,9 @@ export default function ActionPanel({ onAction }: ActionPanelProps) {
             `}
           >
             <Icon className={`w-4 h-4 ${accent.text} shrink-0`} />
-            <span className="text-sm font-semibold">{btn.label}</span>
+            <span className="text-sm font-semibold ml-1.5">{btn.label}</span>
             {btn.costLabel && (
-              <span className="text-xs text-[var(--text-muted)] font-mono">
+              <span className="text-xs text-[var(--text-muted)] font-mono ml-auto">
                 {btn.costLabel}
               </span>
             )}

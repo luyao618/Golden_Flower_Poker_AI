@@ -38,13 +38,13 @@ export default function WelcomePage() {
         {/* 主标题 — 霓虹灯招牌闪烁风格 */}
         <h1 className="text-7xl font-black neon-sign-flicker tracking-widest mb-3"
             style={{ fontFamily: 'var(--font-display)' }}>
-          AI 炸金花
+           大模型炸金花
         </h1>
 
         {/* 副标题 */}
         <p className="text-[var(--text-secondary)] text-base tracking-[0.3em] uppercase mb-4"
            style={{ fontFamily: 'var(--font-display)' }}>
-          Golden Flower Poker AI
+          LLM Golden Flower Poker
         </p>
 
         {/* 装饰线 */}
@@ -109,7 +109,7 @@ export default function WelcomePage() {
 
       {/* 底部版本号 */}
       <p className="text-[var(--text-disabled)] text-xs pb-4 relative z-10 tracking-wider">
-        Golden Flower Poker AI v0.1
+        LLM Golden Flower Poker v0.1
       </p>
 
       {/* 模型配置面板 */}

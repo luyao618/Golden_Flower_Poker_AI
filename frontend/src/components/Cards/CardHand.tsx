@@ -31,8 +31,8 @@ export interface CardHandProps {
 /** 根据 card size 获取默认的卡牌重叠偏移量 */
 function getDefaultOverlap(size: CardSize): number {
   switch (size) {
-    case 'xs': return 18
-    case 'sm': return 24
+    case 'xs': return 14
+    case 'sm': return 18
     case 'md': return 32
     case 'lg': return 44
     case 'xl': return 56
@@ -78,15 +78,16 @@ export default function CardHand({
     const centerIndex = (count - 1) / 2
     const xOffset = (index - centerIndex) * actualOverlap
 
-    // 垂直偏移：两侧的牌略微下沉，形成弧形
+    // 垂直偏移：仅在有扇形展开时两侧略微下沉
     const normalizedPos = (index - centerIndex) / (count > 1 ? centerIndex : 1)
-    const yOffset = Math.abs(normalizedPos) * 4
+    const yOffset = fanAngle > 0 ? Math.abs(normalizedPos) * 4 : 0
 
     return {
+      '--base-transform': `translateX(${xOffset}px) translateY(${yOffset}px) rotate(${angle}deg)`,
       transform: `translateX(${xOffset}px) translateY(${yOffset}px) rotate(${angle}deg)`,
       zIndex: index + 1,
       transformOrigin: 'center bottom',
-    }
+    } as React.CSSProperties
   }
 
   return (

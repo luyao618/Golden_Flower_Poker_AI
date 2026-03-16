@@ -40,7 +40,7 @@ const CHIP_COLORS = [
   'bg-orange-400',
 ]
 
-const POT_CENTER: SeatPosition = { x: 50, y: 45 }
+const POT_CENTER: SeatPosition = { x: 50, y: 12 }
 
 export default function ChipFlyAnimation({
   playerPositions,

@@ -229,16 +229,7 @@ export default function ResultPage() {
           <div className="text-[var(--text-muted)] text-xs font-mono">
             ID: {gameId.slice(0, 8)}
           </div>
-          {/* 再来一局 — 霓虹边框按钮 */}
-          <div className="neon-btn-wrapper inline-block">
-            <button
-              onClick={handleBackToLobby}
-              className="relative px-4 py-1.5 font-bold rounded-xl text-sm bg-[var(--bg-surface)] text-[var(--text-primary)] transition-all cursor-pointer hover:bg-[var(--bg-elevated)]"
-              style={{ fontFamily: 'var(--font-display)' }}
-            >
-              再来一局
-            </button>
-          </div>
+          <div />
         </div>
       </header>
 

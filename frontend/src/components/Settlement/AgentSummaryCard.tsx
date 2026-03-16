@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { GameSummary, ExperienceReview, Player } from '../../types/game'
-import { getAvatarAccent } from '../../utils/theme'
 
 // ---- 触发条件中文映射 ----
 
@@ -107,7 +106,6 @@ export default function AgentSummaryCard({
     return (
       <div className="bg-[var(--bg-surface)]/20 border border-[var(--border-default)] rounded-xl p-6">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-[var(--bg-elevated)]/40 animate-pulse" />
           <div className="space-y-2 flex-1">
             <div className="h-4 w-24 bg-[var(--bg-elevated)]/40 rounded animate-pulse" />
             <div className="h-3 w-16 bg-[var(--bg-elevated)]/30 rounded animate-pulse" />
@@ -123,7 +121,6 @@ export default function AgentSummaryCard({
       : '0.0'
     : '-'
   const foldRate = summary ? (summary.fold_rate * 100).toFixed(1) : '-'
-  const accent = getAvatarAccent(player.id)
 
   return (
     <motion.div
@@ -136,20 +133,6 @@ export default function AgentSummaryCard({
         className="w-full flex items-center gap-4 px-5 py-4
           hover:bg-[var(--bg-hover)]/20 transition-colors cursor-pointer"
       >
-        {/* 头像 — 赛博朋克风格：暗底 + 细边框发光 */}
-        <div
-          className="w-11 h-11 rounded-full flex items-center justify-center font-semibold text-sm shrink-0"
-          style={{
-            background: 'rgba(15, 15, 35, 0.6)',
-            border: `1.5px solid ${accent.border}`,
-            boxShadow: `0 0 8px ${accent.glow}, inset 0 0 6px ${accent.glow}`,
-            color: accent.text,
-            fontFamily: 'var(--font-mono)',
-          }}
-        >
-          {player.avatar || player.name.charAt(0)}
-        </div>
-
         {/* 基本信息 */}
         <div className="flex-1 min-w-0 text-left">
           <div className="flex items-center gap-2">
