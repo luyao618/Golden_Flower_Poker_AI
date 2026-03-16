@@ -1,6 +1,5 @@
 import { motion } from 'framer-motion'
 import type { Player } from '../../types/game'
-import { getAvatarAccent } from '../../utils/theme'
 
 // ---- 排名徽章 ----
 
@@ -53,7 +52,6 @@ export default function Leaderboard({ rankings }: LeaderboardProps) {
           const chipDiff = entry.player.chips - entry.initialChips
           const isPositive = chipDiff > 0
           const isNegative = chipDiff < 0
-          const accent = getAvatarAccent(entry.player.id)
 
           return (
             <motion.div
@@ -72,22 +70,6 @@ export default function Leaderboard({ rankings }: LeaderboardProps) {
             >
               {/* 排名 */}
               <RankBadge rank={rank} />
-
-              {/* 头像 — 赛博朋克风格：暗底 + 细边框发光 */}
-              <div
-                className="w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm shrink-0"
-                style={{
-                  background: 'rgba(15, 15, 35, 0.6)',
-                  border: `1.5px solid ${isFirst ? 'rgba(255, 215, 0, 0.5)' : accent.border}`,
-                  boxShadow: isFirst
-                    ? '0 0 8px rgba(255, 215, 0, 0.2), inset 0 0 6px rgba(255, 215, 0, 0.05)'
-                    : `0 0 8px ${accent.glow}, inset 0 0 6px ${accent.glow}`,
-                  color: isFirst ? 'rgba(255, 225, 140, 0.9)' : accent.text,
-                  fontFamily: 'var(--font-mono)',
-                }}
-              >
-                {entry.player.avatar || entry.player.name.charAt(0)}
-              </div>
 
               {/* 名字 + 类型 */}
               <div className="flex-1 min-w-0">

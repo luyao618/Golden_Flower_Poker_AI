@@ -28,7 +28,6 @@ interface ChatBubbleProps {
  */
 export default function ChatBubble({
   message,
-  position = 'above',
 }: ChatBubbleProps) {
   const [visible, setVisible] = useState(false)
   const [currentMsg, setCurrentMsg] = useState<ChatMessage | null>(null)
@@ -47,8 +46,6 @@ export default function ChatBubble({
     return () => clearTimeout(timer)
   }, [message])
 
-  const isAbove = position === 'above'
-
   // 截断过长消息
   const displayText =
     currentMsg && currentMsg.content.length > MAX_CHARS
@@ -60,41 +57,32 @@ export default function ChatBubble({
       {visible && currentMsg && (
         <motion.div
           key={currentMsg.id}
-          className={`
-            absolute left-1/2 -translate-x-1/2 z-20
-            pointer-events-none
-            ${isAbove ? 'bottom-full mb-2' : 'top-full mt-2'}
-          `}
-          initial={{ opacity: 0, y: isAbove ? 8 : -8, scale: 0.85 }}
+          className="relative z-20 pointer-events-none mb-1.5"
+          initial={{ opacity: 0, y: 6, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: isAbove ? -4 : 4, scale: 0.9 }}
+          exit={{ opacity: 0, y: -4, scale: 0.95 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
         >
           {/* 气泡主体 */}
-          <div className="relative max-w-[180px] min-w-[40px]">
-            <div
-              className={`
-                px-2.5 py-1.5 rounded-xl text-xs leading-relaxed
-                text-white/95 shadow-lg
-                ${getBubbleBg(currentMsg.message_type)}
-              `}
-            >
-              {displayText}
-            </div>
-
-            {/* 气泡小三角 */}
-            <div
-              className={`
-                absolute left-1/2 -translate-x-1/2
-                w-0 h-0
-                ${
-                  isAbove
-                    ? 'top-full border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-t-[var(--bg-surface)]'
-                    : 'bottom-full border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-b-[5px] border-b-[var(--bg-surface)]'
-                }
-              `}
-            />
+          <div
+            className={`
+              max-w-[240px] min-w-[60px] px-3 py-1 rounded-lg text-xs leading-relaxed
+              text-white/95 whitespace-nowrap overflow-hidden text-ellipsis
+              backdrop-blur-sm shadow-lg
+              ${getBubbleBg(currentMsg.message_type)}
+            `}
+          >
+            {displayText}
           </div>
+
+          {/* 气泡小三角 */}
+          <div
+            className="absolute left-1/2 -translate-x-1/2 top-full
+              w-0 h-0
+              border-l-[5px] border-l-transparent
+              border-r-[5px] border-r-transparent
+              border-t-[5px] border-t-white/10"
+          />
         </motion.div>
       )}
     </AnimatePresence>
@@ -105,12 +93,12 @@ export default function ChatBubble({
 function getBubbleBg(messageType: string): string {
   switch (messageType) {
     case 'action_talk':
-      return 'bg-[var(--bg-surface)]/90 border border-[var(--color-info)]/30'
+      return 'bg-black/50 border border-[var(--color-info)]/40 shadow-[0_0_8px_rgba(0,150,255,0.15)]'
     case 'bystander_react':
-      return 'bg-[var(--bg-surface)]/90 border border-[var(--color-secondary)]/30'
+      return 'bg-black/50 border border-[var(--color-secondary)]/40 shadow-[0_0_8px_rgba(139,92,246,0.15)]'
     case 'player_message':
-      return 'bg-[var(--bg-surface)]/90 border border-[var(--color-primary)]/30'
+      return 'bg-black/50 border border-[var(--color-primary)]/40 shadow-[0_0_8px_rgba(0,212,255,0.15)]'
     default:
-      return 'bg-[var(--bg-surface)]/90 border border-[var(--border-default)]'
+      return 'bg-black/50 border border-white/15 shadow-[0_0_8px_rgba(255,255,255,0.05)]'
   }
 }

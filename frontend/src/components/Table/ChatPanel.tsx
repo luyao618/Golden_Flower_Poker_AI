@@ -13,7 +13,6 @@
 import { useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { ChatMessage, ChatMessageType } from '../../types/game'
-import { getAvatarColor, getAvatarText } from '../../utils/theme'
 
 // ---- 消息类型样式配置 ----
 
@@ -137,7 +136,7 @@ function ChatMessageItem({ message }: { message: ChatMessage }) {
     )
   }
 
-  // 普通消息（带头像和名字）
+  // 普通消息（名字 + 内容）
   return (
     <motion.div
       className={`flex gap-2 px-2 py-1.5 rounded-lg ${style.bgClass}`}
@@ -146,17 +145,6 @@ function ChatMessageItem({ message }: { message: ChatMessage }) {
       exit={{ opacity: 0, x: -12 }}
       transition={{ duration: 0.2 }}
     >
-      {/* 头像 */}
-      <div
-        className={`
-          w-7 h-7 rounded-full flex items-center justify-center
-          text-white text-[10px] font-bold shrink-0
-          bg-gradient-to-br ${getAvatarColor(message.player_id)}
-        `}
-      >
-        {getAvatarText(message.player_name)}
-      </div>
-
       {/* 内容区 */}
       <div className="flex-1 min-w-0">
         {/* 名字 + 类型标签 + 时间 */}

@@ -114,12 +114,19 @@ export default function PlayerSeat({
             className={`
               relative flex flex-col items-center
               transition-all duration-300
-              ${isDimmed ? 'opacity-40 grayscale-[0.5]' : ''}
+              ${isDimmed ? '' : ''}
               ${isClickable ? 'cursor-pointer hover:scale-105' : ''}
               ${isActive ? 'scale-[1.03]' : ''}
             `}
             onClick={isClickable ? onClick : undefined}
           >
+            {/* 聊天气泡（名字上方，不影响布局） */}
+            <div className="relative">
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1">
+                <ChatBubble message={latestMessage ?? null} position="above" />
+              </div>
+            </div>
+
             {/* 名字（角色上方） */}
             <div className="text-center mb-1 flex items-center gap-1.5">
               <span className="text-sm font-bold text-[var(--text-primary)] drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
@@ -154,9 +161,11 @@ export default function PlayerSeat({
                   transition-opacity duration-300
                 `}
                 style={{
-                  filter: isActive
-                    ? 'drop-shadow(0 0 20px rgba(0,212,255,0.4))'
-                    : 'drop-shadow(0 2px 8px rgba(0,0,0,0.6))',
+                  filter: isDimmed
+                    ? 'grayscale(1) saturate(0) drop-shadow(0 2px 8px rgba(0,0,0,0.6))'
+                    : isActive
+                      ? 'drop-shadow(0 0 20px rgba(0,212,255,0.4))'
+                      : 'drop-shadow(0 2px 8px rgba(0,0,0,0.6))',
                 }}
                 loading="eager"
                 draggable={false}
@@ -211,27 +220,36 @@ export default function PlayerSeat({
                   {player.chips.toLocaleString()}
                 </span>
                 <span className="text-[var(--text-disabled)]">·</span>
-                <span className={`text-xs ${getStatusColor(player.status)}`}>
+                <span className={`text-xs font-semibold drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)] ${getStatusColor(player.status)}`}>
                   {STATUS_LABELS[player.status]}
                 </span>
               </div>
               {player.total_bet_this_round > 0 && (
-                <div className="text-[var(--color-primary)]/60 text-[10px] leading-tight">
+                <div className="text-[var(--color-primary)] text-xs font-medium drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)] leading-tight">
                   下注 {player.total_bet_this_round}
                 </div>
               )}
             </div>
-          </div>
 
-          {/* 聊天气泡（放在角色位置） */}
-          <ChatBubble message={latestMessage ?? null} position={bubblePosition} />
+            {/* AI 对手的牌（角色下方） */}
+            {shouldShowCards && (
+              <div className="mt-1 flex justify-center">
+                <CardHand
+                  cards={PLACEHOLDER_CARDS}
+                  faceUp={false}
+                  size="xs"
+                  fanAngle={0}
+                />
+              </div>
+            )}
+          </div>
         </motion.div>
       )}
 
       {/* ============================================ */}
-      {/* 2. 牌区域（所有玩家，使用 cardPosition）    */}
+      {/* 2. 牌区域（仅人类玩家，使用 cardPosition）  */}
       {/* ============================================ */}
-      {shouldShowCards && (
+      {isHuman && shouldShowCards && (
         <motion.div
           className="absolute pointer-events-auto"
           style={{
@@ -244,31 +262,22 @@ export default function PlayerSeat({
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3, delay: 0.15 }}
         >
-          {isHuman ? (
-            <div
-              className={canLookAtCards ? 'cursor-pointer' : ''}
-              onClick={canLookAtCards ? _onLookAtCards : undefined}
-            >
-              <CardHand
-                cards={_myCards.length > 0 ? _myCards : PLACEHOLDER_CARDS}
-                faceUp={hasLookedAtCards && _myCards.length > 0}
-                size="sm"
-                fanAngle={6}
-              />
-              {canLookAtCards && (
-                <div className="text-center text-[8px] text-[var(--color-gold)]/60 mt-0.5 animate-pulse">
-                  点击看牌
-                </div>
-              )}
-            </div>
-          ) : (
+          <div
+            className={canLookAtCards ? 'cursor-pointer' : ''}
+            onClick={canLookAtCards ? _onLookAtCards : undefined}
+          >
             <CardHand
-              cards={PLACEHOLDER_CARDS}
-              faceUp={false}
-              size="xs"
-              fanAngle={5}
+              cards={_myCards.length > 0 ? _myCards : PLACEHOLDER_CARDS}
+              faceUp={hasLookedAtCards && _myCards.length > 0}
+              size="md"
+              fanAngle={0}
             />
-          )}
+            {canLookAtCards && (
+              <div className="text-center text-[8px] text-[var(--color-gold)]/60 mt-0.5 animate-pulse">
+                点击看牌
+              </div>
+            )}
+          </div>
         </motion.div>
       )}
 
@@ -297,13 +306,13 @@ export default function PlayerSeat({
 function getStatusColor(status: PlayerStatus): string {
   switch (status) {
     case 'active_blind':
-      return 'text-[var(--color-info)]/70'
+      return 'text-[var(--color-info)]'
     case 'active_seen':
-      return 'text-[var(--color-gold)]/70'
+      return 'text-[var(--color-gold)]'
     case 'folded':
-      return 'text-[var(--text-muted)]'
+      return 'text-[var(--text-secondary)]'
     case 'out':
-      return 'text-[var(--color-danger)]/70'
+      return 'text-[var(--color-danger)]'
   }
 }
 

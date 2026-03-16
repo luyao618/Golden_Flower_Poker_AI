@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { MessageCircle, ChevronUp } from 'lucide-react'
+import { MessageCircle, ChevronUp, ArrowLeft, BookOpen, LogOut, Trophy } from 'lucide-react'
 import TableLayout from '../components/Table/TableLayout'
 import { ActionPanel } from '../components/Actions'
 import ChatPanel from '../components/Table/ChatPanel'
@@ -231,7 +231,7 @@ function StatusBar() {
   const hasAnyStatus = currentRound && (activePlayer || thinkingPlayer || reviewingPlayer)
 
   return (
-    <div className="w-full h-8 bg-black/60 backdrop-blur-sm border-t border-white/[0.06] flex items-center justify-center gap-6 px-4">
+    <div className="w-full h-10 bg-black/60 backdrop-blur-sm border-t border-white/[0.06] flex items-center justify-center gap-6 px-4">
       <AnimatePresence mode="popLayout">
         {!hasAnyStatus && (
           <motion.span
@@ -431,42 +431,70 @@ export default function GamePage() {
           <TableLayout className="w-full h-full" onCheckCards={() => sendAction('check_cards')} />
 
           {/* 浮动顶部栏 */}
-          <header className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-1.5 bg-black/40 backdrop-blur-sm border-b border-white/[0.04]">
+          <header className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3 py-2 bg-black/50 backdrop-blur-md border-b border-white/[0.06]">
             <button
               onClick={handleBackToLobby}
-              className="text-[var(--text-muted)] hover:text-[var(--color-primary)] text-xs transition-colors cursor-pointer"
+              className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg
+                bg-white/[0.05] border border-[var(--color-primary)]/30
+                hover:bg-[var(--color-primary)]/10 hover:border-[var(--color-primary)]/50
+                hover:shadow-[0_0_12px_rgba(0,212,255,0.15)]
+                transition-all cursor-pointer"
             >
-              ← 返回
+              <ArrowLeft className="w-3.5 h-3.5 text-[var(--color-primary)] group-hover:text-[var(--color-primary)] transition-colors" />
+              <span className="text-xs font-medium text-[var(--color-primary)] group-hover:text-[var(--color-primary)] transition-colors">
+                返回
+              </span>
             </button>
             <div className="flex items-center gap-2">
-              <span className="text-[var(--text-muted)] text-[10px] font-mono">
+              <span className="text-[var(--text-secondary)] text-[10px] font-mono">
                 {effectiveGameId.slice(0, 8)}
               </span>
               <ConnectionIndicator status={connectionStatus} />
             </div>
             <div className="flex items-center gap-2">
-              {roundHistory.length > 0 && (
+              {(
                 <button
                   onClick={() => toggleThoughtDrawer()}
-                  className="text-[var(--color-secondary)]/60 hover:text-[var(--color-secondary)] text-xs transition-colors cursor-pointer"
+                  className="group flex items-center justify-center gap-1.5 min-w-[100px] px-3 py-1.5 rounded-lg
+                    bg-white/[0.05] border border-[var(--color-gold)]/30
+                    hover:bg-[var(--color-gold)]/10 hover:border-[var(--color-gold)]/50
+                    hover:shadow-[0_0_12px_rgba(255,215,0,0.2)]
+                    transition-all cursor-pointer"
                   title="查看 AI 心路历程"
                 >
-                  心路历程
+                  <BookOpen className="w-3.5 h-3.5 text-[var(--color-gold)] group-hover:text-[var(--color-gold)] transition-colors" />
+                  <span className="text-xs font-medium text-[var(--color-gold)] group-hover:text-[var(--color-gold)] transition-colors">
+                    心路历程
+                  </span>
                 </button>
               )}
               {status === 'finished' ? (
                 <button
                   onClick={() => navigate(`/result/${effectiveGameId}`)}
-                  className="text-[var(--color-gold)]/80 hover:text-[var(--color-gold)] text-xs transition-colors cursor-pointer"
+                  className="group flex items-center justify-center gap-1.5 min-w-[100px] px-3 py-1.5 rounded-lg
+                    bg-[var(--color-gold)]/10 border border-[var(--color-gold)]/40
+                    hover:bg-[var(--color-gold)]/15 hover:border-[var(--color-gold)]/60
+                    hover:shadow-[0_0_12px_rgba(255,215,0,0.2)]
+                    transition-all cursor-pointer"
                 >
-                  查看结果
+                  <Trophy className="w-3.5 h-3.5 text-[var(--color-gold)] group-hover:text-[var(--color-gold)] transition-colors" />
+                  <span className="text-xs font-medium text-[var(--color-gold)] group-hover:text-[var(--color-gold)] transition-colors">
+                    查看结果
+                  </span>
                 </button>
               ) : (
                 <button
                   onClick={handleEndGame}
-                  className="text-[var(--color-gold)]/60 hover:text-[var(--color-gold)] text-xs transition-colors cursor-pointer"
+                  className="group flex items-center justify-center gap-1.5 min-w-[100px] px-3 py-1.5 rounded-lg
+                    bg-white/[0.05] border border-[var(--color-danger)]/30
+                    hover:bg-[var(--color-danger)]/10 hover:border-[var(--color-danger)]/50
+                    hover:shadow-[0_0_12px_rgba(255,68,68,0.15)]
+                    transition-all cursor-pointer"
                 >
-                  结束
+                  <LogOut className="w-3.5 h-3.5 text-[var(--color-danger)] group-hover:text-[var(--color-danger)] transition-colors" />
+                  <span className="text-xs font-medium text-[var(--color-danger)] group-hover:text-[var(--color-danger)] transition-colors">
+                    结束游戏
+                  </span>
                 </button>
               )}
             </div>
@@ -474,7 +502,7 @@ export default function GamePage() {
 
           {/* 聊天面板 - 左下角浮层 */}
           <div className="absolute bottom-2 left-2 w-72 z-10">
-            <div className="flex flex-col bg-black/50 backdrop-blur-md border border-[var(--color-primary)]/15 rounded-xl overflow-hidden shadow-[0_4px_30px_rgba(0,0,0,0.4),0_0_15px_rgba(0,212,255,0.04)]">
+            <div className="flex flex-col bg-black/30 backdrop-blur-md border border-[var(--color-primary)]/15 rounded-xl overflow-hidden shadow-[0_4px_30px_rgba(0,0,0,0.4),0_0_15px_rgba(0,212,255,0.04)]">
               <button
                 onClick={toggleChatPanel}
                 className="group flex items-center justify-between px-3 py-2 hover:bg-white/[0.04] transition-all cursor-pointer"
@@ -509,7 +537,7 @@ export default function GamePage() {
                   >
                     <ChatPanel
                       messages={chatMessages}
-                      className="h-48 py-1"
+                      className="h-72 py-1"
                     />
                     <ChatInput
                       onSend={sendChatMessage}
@@ -524,12 +552,12 @@ export default function GamePage() {
 
           {/* 操作面板 - 右下角浮层 */}
           <div className="absolute bottom-2 right-2 w-64 z-10">
-            <div className="bg-black/50 backdrop-blur-md border border-[var(--color-primary)]/15 rounded-xl overflow-hidden shadow-[0_4px_30px_rgba(0,0,0,0.4),0_0_15px_rgba(0,212,255,0.04)]">
+            <div className="bg-black/30 backdrop-blur-md border border-[var(--color-primary)]/15 rounded-xl overflow-hidden shadow-[0_4px_30px_rgba(0,0,0,0.4),0_0_15px_rgba(0,212,255,0.04)]">
               {canStartRound && (
                 <div className="p-3">
                   <button
                     onClick={sendStartRound}
-                    className="relative w-full px-4 py-2.5 font-bold rounded-lg transition-all cursor-pointer text-sm text-[var(--text-primary)] bg-[var(--bg-surface)] border border-[var(--color-primary)]/40 hover:border-[var(--color-primary)]/70 hover:shadow-[0_0_15px_rgba(0,212,255,0.3)]"
+                    className="relative w-full px-4 py-2.5 font-bold rounded-lg transition-all cursor-pointer text-sm text-[var(--text-primary)] bg-black/30 border border-[var(--color-primary)]/40 hover:border-[var(--color-primary)]/70 hover:shadow-[0_0_15px_rgba(0,212,255,0.3)]"
                     style={{ fontFamily: 'var(--font-display)' }}
                   >
                     {roundHistory.length === 0 ? '开始第一局' : '开始下一局'}

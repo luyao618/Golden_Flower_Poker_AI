@@ -35,11 +35,11 @@ interface SeatPositionSet {
   * y 带微弧度：两侧稍低（透视效果）
  */
 const FIXED_AI_SEATS: SeatPositionSet[] = [
-  { card: { x: 19, y: 57 }, character: { x: 19, y: 51 } },
-  { card: { x: 32, y: 55 }, character: { x: 32, y: 49 } },
-  { card: { x: 45, y: 55 }, character: { x: 45, y: 49 } },  // 中间稍高（透视）
-  { card: { x: 58, y: 55 }, character: { x: 58, y: 49 } },
-  { card: { x: 71, y: 57 }, character: { x: 71, y: 51 } },
+  { card: { x: 19, y: 57 }, character: { x: 19, y: 50 } },
+  { card: { x: 32, y: 55 }, character: { x: 32, y: 48 } },
+  { card: { x: 45, y: 55 }, character: { x: 45, y: 48 } },  // 中间稍高（透视）
+  { card: { x: 58, y: 55 }, character: { x: 58, y: 48 } },
+  { card: { x: 71, y: 57 }, character: { x: 71, y: 50 } },
 ]
 
 /**
@@ -68,7 +68,7 @@ function calculateSeatPositions(
 
   // 第一个位置永远是人类玩家（底部中央）
   positions.push({
-    card: { x: 50, y: 88 },
+    card: { x: 43, y: 83 },
     character: { x: 50, y: 95 }, // 人类不使用角色位置
   })
 

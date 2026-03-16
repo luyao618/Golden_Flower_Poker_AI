@@ -74,9 +74,9 @@ export default function GameConfigForm() {
     <div className="space-y-2">
         <div className="flex items-center justify-between px-1">
           <span className="text-xs font-medium" style={{ fontFamily: 'var(--font-display)', color: '#c8d8e8' }}>
-            AI 对手 ({aiOpponents.length}/5)
+            AI 对手 ({aiOpponents.length}/4)
           </span>
-          {aiOpponents.length < 5 && (
+          {aiOpponents.length < 4 && (
             <button
               type="button"
               onClick={addAIOpponent}
@@ -90,40 +90,22 @@ export default function GameConfigForm() {
 
         <div className="space-y-2">
         {aiOpponents.map((opponent, index) => (
-          <div key={index} className="form-row space-y-3">
-            {/* Header row with icon + name + remove */}
-            <div className="flex items-center gap-3">
-              <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${ICON_COLORS[index % ICON_COLORS.length]} flex items-center justify-center flex-shrink-0`}>
-                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div key={index} className="form-row">
+            <div className="flex items-center gap-2.5">
+              <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${ICON_COLORS[index % ICON_COLORS.length]} flex items-center justify-center flex-shrink-0`}>
+                <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
               </div>
-              <span className="text-white text-sm font-medium flex-1" style={{ fontFamily: 'var(--font-display)' }}>
-                对手 {index + 1}
+              <span className="text-white text-xs font-medium flex-shrink-0 w-10" style={{ fontFamily: 'var(--font-display)' }}>
+                对手{index + 1}
               </span>
-              {aiOpponents.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => removeAIOpponent(index)}
-                  className="text-xs font-medium transition-colors cursor-pointer"
-                  style={{ color: '#8090a0' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = '#f87171')}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = '#8090a0')}
-                >
-                  移除
-                </button>
-              )}
-            </div>
-
-            {/* Model select + Custom name */}
-            <div className="grid grid-cols-2 gap-2 pl-11">
               <select
                 value={opponent.model_id}
                 onChange={(e) => {
                   const newModelId = e.target.value
                   const newModel = availableModels.find((m) => m.id === newModelId)
                   const update: Partial<AIOpponentConfig> = { model_id: newModelId }
-                  // 切换模型时，始终用新模型的去重短名称覆盖
                   if (newModel) {
                     const updatedOpponents = [...aiOpponents]
                     updatedOpponents[index] = { ...updatedOpponents[index], model_id: newModelId }
@@ -131,9 +113,9 @@ export default function GameConfigForm() {
                   }
                   updateAIOpponent(index, update)
                 }}
-                className="w-full px-3 py-1.5 bg-white/[0.06] border border-white/[0.10] rounded-lg
+                className="flex-1 min-w-0 px-2 py-1.5 bg-white/[0.06] border border-white/[0.10] rounded-md
                            text-white text-xs focus:outline-none focus:border-[var(--color-primary)]/30 cursor-pointer
-                           appearance-none"
+                           appearance-none max-w-[45%]"
               >
                 {modelsLoading ? (
                   <option>加载中...</option>
@@ -152,7 +134,6 @@ export default function GameConfigForm() {
                   </option>
                 )}
               </select>
-
               <input
                 type="text"
                 value={opponent.name}
@@ -161,10 +142,22 @@ export default function GameConfigForm() {
                 }
                 placeholder="自定义名称"
                 maxLength={32}
-                className="w-full px-3 py-1.5 bg-white/[0.06] border border-white/[0.10] rounded-lg
+                className="flex-1 min-w-0 px-2 py-1.5 bg-white/[0.06] border border-white/[0.10] rounded-md
                            text-white text-xs placeholder-[#8090a0] focus:outline-none
                            focus:border-[var(--color-primary)]/30 transition-colors"
               />
+              {aiOpponents.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => removeAIOpponent(index)}
+                  className="text-[10px] font-medium transition-colors cursor-pointer flex-shrink-0"
+                  style={{ color: '#8090a0' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#f87171')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = '#8090a0')}
+                >
+                  移除
+                </button>
+              )}
             </div>
           </div>
         ))}
