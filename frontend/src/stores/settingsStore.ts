@@ -1,28 +1,36 @@
 // ============================================================
 // 游戏设置 Store (Zustand)
-// 管理全局设置：LLM max_tokens 等
+// 管理全局设置：AI 调用配置、LLM max_tokens
 // ============================================================
 
 import { create } from 'zustand'
-import { getSettings, updateSettings } from '../services/api'
+import { getSettings, updateSettings, type SettingsData } from '../services/api'
 import { useUIStore } from './uiStore'
 
 export interface SettingsState {
-  /** LLM 最大生成 token 数，null 表示无上限（使用默认值） */
+  /** LLM 最大生成 token 数，null 表示无上限 */
   maxTokens: number | null
-  /** 是否正在加载设置 */
+  /** AI 调用配置 */
+  llmTimeout: number
+  llmMaxRetries: number
+  llmTemperature: number
+  /** 加载/保存状态 */
   loading: boolean
-  /** 是否正在保存设置 */
   saving: boolean
 
   /** 从后端拉取当前设置 */
   fetchSettings: () => Promise<void>
-  /** 更新 max_tokens 设置 */
+  /** 更新 max_tokens */
   setMaxTokens: (value: number | null) => Promise<void>
+  /** 更新单个设置项 */
+  updateSetting: <K extends keyof SettingsData>(key: K, value: SettingsData[K]) => Promise<void>
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   maxTokens: null,
+  llmTimeout: 30,
+  llmMaxRetries: 3,
+  llmTemperature: 0.7,
   loading: false,
   saving: false,
 
@@ -30,7 +38,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set({ loading: true })
     try {
       const res = await getSettings()
-      set({ maxTokens: res.llm_max_tokens })
+      set({
+        maxTokens: res.llm_max_tokens,
+        llmTimeout: res.llm_timeout,
+        llmMaxRetries: res.llm_max_retries,
+        llmTemperature: res.llm_temperature,
+      })
     } catch (err) {
       useUIStore.getState().pushErrorPopup({
         message: err instanceof Error ? err.message : '获取设置失败',
@@ -46,6 +59,26 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     try {
       await updateSettings({ llm_max_tokens: value })
       set({ maxTokens: value })
+    } catch (err) {
+      useUIStore.getState().pushErrorPopup({
+        message: err instanceof Error ? err.message : '更新设置失败',
+        source: '保存设置',
+      })
+    } finally {
+      set({ saving: false })
+    }
+  },
+
+  updateSetting: async (key, value) => {
+    set({ saving: true })
+    try {
+      const res = await updateSettings({ [key]: value })
+      set({
+        maxTokens: res.llm_max_tokens,
+        llmTimeout: res.llm_timeout,
+        llmMaxRetries: res.llm_max_retries,
+        llmTemperature: res.llm_temperature,
+      })
     } catch (err) {
       useUIStore.getState().pushErrorPopup({
         message: err instanceof Error ? err.message : '更新设置失败',

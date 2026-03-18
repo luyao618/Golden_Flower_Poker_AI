@@ -10,33 +10,32 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
 import litellm
 
-from app.config import ALL_MODELS, _get_all_models, get_settings
+from app.agents.prompts import render_decision_prompt, render_system_prompt
+from app.api.settings import get_runtime_llm_config
+from app.config import _get_all_models, get_settings
+from app.engine.evaluator import evaluate_hand
+from app.engine.rules import (
+    get_available_actions,
+    get_call_cost,
+    get_compare_cost,
+    get_raise_cost,
+    validate_action,
+)
+from app.models.card import Card
 from app.models.game import (
     ActionRecord,
     GameAction,
-    GameConfig,
     GameState,
     Player,
     PlayerStatus,
     RoundState,
 )
-from app.models.card import Card
-from app.engine.evaluator import evaluate_hand
-from app.engine.rules import (
-    get_available_actions,
-    get_call_cost,
-    get_raise_cost,
-    get_compare_cost,
-    validate_action,
-)
-from app.agents.prompts import render_system_prompt, render_decision_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -193,13 +192,14 @@ class BaseAgent:
             LLMCallError: LLM 调用失败且重试耗尽时抛出
         """
         settings = get_settings()
+        llm_cfg = get_runtime_llm_config()
         model_config = _get_all_models().get(self.model_id)
         if not model_config:
             raise LLMCallError(f"Unknown model_id: {self.model_id}")
 
         model_name = model_config["model"]
         provider = model_config.get("provider", "")
-        temp = temperature if temperature is not None else settings.llm_temperature
+        temp = temperature if temperature is not None else llm_cfg["llm_temperature"]
         fmt = response_format or {"type": "json_object"}
 
         # ---- Copilot 路径 ----
@@ -212,13 +212,13 @@ class BaseAgent:
 
         last_error: Exception | None = None
 
-        for attempt in range(1, settings.llm_max_retries + 1):
+        for attempt in range(1, llm_cfg["llm_max_retries"] + 1):
             try:
                 logger.info(
                     "[%s] LLM call attempt %d/%d, model=%s",
                     self.name,
                     attempt,
-                    settings.llm_max_retries,
+                    llm_cfg["llm_max_retries"],
                     model_name,
                 )
 
@@ -233,7 +233,7 @@ class BaseAgent:
                     messages=messages,
                     temperature=temp,
                     response_format=fmt,
-                    timeout=settings.llm_timeout,
+                    timeout=llm_cfg["llm_timeout"],
                     max_tokens=effective_max_tokens,
                 )
 
@@ -247,7 +247,7 @@ class BaseAgent:
             except Exception as e:
                 last_error = e
                 logger.warning("[%s] LLM call attempt %d failed: %s", self.name, attempt, str(e))
-                if attempt < settings.llm_max_retries:
+                if attempt < llm_cfg["llm_max_retries"]:
                     # 简单的指数退避
                     import asyncio
 
@@ -256,7 +256,7 @@ class BaseAgent:
                     await asyncio.sleep(wait_time)
 
         raise LLMCallError(
-            f"LLM call failed after {settings.llm_max_retries} retries: {last_error}"
+            f"LLM call failed after {llm_cfg['llm_max_retries']} retries: {last_error}"
         )
 
     async def _call_copilot(
@@ -272,23 +272,23 @@ class BaseAgent:
         包含重试逻辑。
         """
         from app.services.copilot_auth import (
-            get_copilot_auth,
-            CopilotAuthError,
             CopilotAPIError,
+            CopilotAuthError,
             CopilotSubscriptionError,
+            get_copilot_auth,
         )
 
-        settings = get_settings()
+        llm_cfg = get_runtime_llm_config()
         copilot = get_copilot_auth()
         last_error: Exception | None = None
 
-        for attempt in range(1, settings.llm_max_retries + 1):
+        for attempt in range(1, llm_cfg["llm_max_retries"] + 1):
             try:
                 logger.info(
                     "[%s] Copilot API call attempt %d/%d, model=%s",
                     self.name,
                     attempt,
-                    settings.llm_max_retries,
+                    llm_cfg["llm_max_retries"],
                     model_name,
                 )
 
@@ -318,7 +318,7 @@ class BaseAgent:
                 logger.warning(
                     "[%s] Copilot API call attempt %d failed: %s", self.name, attempt, str(e)
                 )
-                if attempt < settings.llm_max_retries:
+                if attempt < llm_cfg["llm_max_retries"]:
                     import asyncio
 
                     wait_time = 2**attempt
@@ -332,14 +332,14 @@ class BaseAgent:
                     attempt,
                     str(e),
                 )
-                if attempt < settings.llm_max_retries:
+                if attempt < llm_cfg["llm_max_retries"]:
                     import asyncio
 
                     wait_time = 2**attempt
                     await asyncio.sleep(wait_time)
 
         raise LLMCallError(
-            f"Copilot API call failed after {settings.llm_max_retries} retries: {last_error}"
+            f"Copilot API call failed after {llm_cfg['llm_max_retries']} retries: {last_error}"
         )
 
     # ---- Prompt 构建 ----

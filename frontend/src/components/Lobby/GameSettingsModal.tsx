@@ -1,7 +1,6 @@
 // ============================================================
-// 游戏设置弹窗 — 左右分栏布局
-// 左侧：设置分类侧边栏（模型设置 等）
-// 右侧：选中分类对应的设置内容
+// 游戏设置弹窗 — 单面板布局
+// 所有 LLM 相关设置集中在一个可滚动面板中
 // ============================================================
 
 import { useCallback, useEffect, useState } from 'react'
@@ -12,30 +11,6 @@ interface GameSettingsModalProps {
   open: boolean
   onClose: () => void
 }
-
-// ---- 侧边栏分类 ----
-
-type SettingsTab = 'model'
-
-interface SettingsTabMeta {
-  id: SettingsTab
-  name: string
-  icon: string
-  color: string
-  accentBorder: string
-  accentBg: string
-}
-
-const SETTINGS_TABS: SettingsTabMeta[] = [
-  {
-    id: 'model',
-    name: '模型设置',
-    icon: '⚙',
-    color: 'text-cyan-400',
-    accentBorder: 'border-cyan-500/60',
-    accentBg: 'bg-cyan-500/10',
-  },
-]
 
 // ---- Max Token 预设 ----
 
@@ -55,63 +30,99 @@ const MAX_TOKEN_PRESETS: MaxTokenPreset[] = [
 ]
 
 // ================================================================
-// SidebarItem
+// 通用数值输入行组件
 // ================================================================
 
-function SidebarItem({
-  meta,
-  isActive,
-  onClick,
+function SettingNumberRow({
+  label,
+  desc,
+  value,
+  min,
+  max,
+  step,
+  unit,
+  saving,
+  onChange,
 }: {
-  meta: SettingsTabMeta
-  isActive: boolean
-  onClick: () => void
+  label: string
+  desc: string
+  value: number
+  min: number
+  max: number
+  step: number
+  unit?: string
+  saving: boolean
+  onChange: (v: number) => void
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all cursor-pointer
-        ${isActive
-          ? `${meta.accentBg} ${meta.accentBorder} border shadow-[0_0_12px_rgba(0,212,255,0.08)]`
-          : 'border border-transparent hover:bg-white/[0.06] hover:border-white/[0.10]'
-        }`}
-    >
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-sm
-        ${isActive ? meta.accentBg + ' ' + meta.color : 'bg-white/[0.08] text-[#a0b0c8]'}`}>
-        {meta.icon}
-      </div>
-      <div className="flex-1 text-left min-w-0">
-        <div className={`text-sm font-medium ${isActive ? meta.color : 'text-[#d0dce8]'}`}>
-          {meta.name}
+    <div className="p-3 rounded-lg border border-cyan-500/40 bg-cyan-500/8">
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <h4 className="text-sm font-medium text-[#d0dce8]">{label}</h4>
+          <p className="text-[10px] text-[#8090a0] mt-0.5">{desc}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            value={value}
+            onChange={(e) => {
+              const v = Number(e.target.value)
+              if (!isNaN(v)) onChange(Math.max(min, Math.min(max, v)))
+            }}
+            min={min}
+            max={max}
+            step={step}
+            disabled={saving}
+            className="w-24 px-3 py-1.5 bg-white/[0.06] border border-white/[0.12] rounded-lg
+                       text-cyan-300 text-sm font-mono text-right
+                       focus:outline-none focus:border-white/[0.25] transition-colors
+                       disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+          {unit && <span className="text-[10px] text-[#8090a0] w-6">{unit}</span>}
         </div>
       </div>
-    </button>
+      {/* slider */}
+      <input
+        type="range"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        min={min}
+        max={max}
+        step={step}
+        disabled={saving}
+        className="w-full h-1 rounded-full appearance-none cursor-pointer
+                   bg-white/[0.08] accent-current disabled:cursor-not-allowed"
+        style={{ accentColor: '#22d3ee' }}
+      />
+    </div>
   )
 }
 
 // ================================================================
-// ModelSettingsPanel — 右侧模型设置面板
+// SettingsPanel — 统一设置面板
 // ================================================================
 
-function ModelSettingsPanel() {
-  const { maxTokens, loading, saving, fetchSettings, setMaxTokens } = useSettingsStore()
-  const [selected, setSelected] = useState<number | null>(null)
+function SettingsPanel() {
+  const {
+    maxTokens, llmTimeout, llmMaxRetries, llmTemperature,
+    loading, saving, fetchSettings, setMaxTokens, updateSetting,
+  } = useSettingsStore()
+  const [selectedTokens, setSelectedTokens] = useState<number | null>(null)
   const [initialized, setInitialized] = useState(false)
 
-  // 初始化
   useEffect(() => {
     fetchSettings().then(() => setInitialized(true))
   }, [fetchSettings])
 
-  // 同步 store 到本地 selected
+  // 同步 store 到本地 selectedTokens
   useEffect(() => {
     if (initialized) {
-      setSelected(maxTokens)
+      setSelectedTokens(maxTokens)
     }
   }, [maxTokens, initialized])
 
-  const handleSelect = useCallback(async (value: number | null) => {
-    setSelected(value)
+  const handleSelectTokens = useCallback(async (value: number | null) => {
+    setSelectedTokens(value)
     await setMaxTokens(value)
   }, [setMaxTokens])
 
@@ -124,16 +135,89 @@ function ModelSettingsPanel() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-2">
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm bg-cyan-500/10 text-cyan-400">
-          ⚙
+      <div>
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm bg-cyan-500/10 text-cyan-400">
+            ⚙
+          </div>
+          <h3 className="text-base font-semibold text-cyan-400">模型设置</h3>
         </div>
-        <h3 className="text-base font-semibold text-cyan-400">模型设置</h3>
+        <p className="text-xs text-[#8090a0] leading-relaxed ml-9">
+          调整 LLM 调用参数。修改立即生效，影响所有 AI 玩家。
+        </p>
       </div>
 
-      {/* Max Tokens */}
+      {/* ---- 调用参数 ---- */}
+      <div className="space-y-3">
+        <SettingNumberRow
+          label="调用超时"
+          desc="单次 LLM API 请求的最大等待时间"
+          value={llmTimeout}
+          min={5} max={120} step={5}
+          unit="秒"
+          saving={saving}
+          onChange={(v) => updateSetting('llm_timeout', v)}
+        />
+        <SettingNumberRow
+          label="最大重试次数"
+          desc="调用失败后的自动重试次数（0 = 不重试）"
+          value={llmMaxRetries}
+          min={0} max={10} step={1}
+          unit="次"
+          saving={saving}
+          onChange={(v) => updateSetting('llm_max_retries', v)}
+        />
+
+        {/* Temperature — 特殊处理，用 0.1 步长 */}
+        <div className="p-3 rounded-lg border border-cyan-500/40 bg-cyan-500/8">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h4 className="text-sm font-medium text-[#d0dce8]">生成温度</h4>
+              <p className="text-[10px] text-[#8090a0] mt-0.5">
+                控制 AI 回复的随机性。低温度更保守，高温度更有创意
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={llmTemperature}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  if (!isNaN(v)) updateSetting('llm_temperature', Math.max(0, Math.min(2, Math.round(v * 10) / 10)))
+                }}
+                min={0} max={2} step={0.1}
+                disabled={saving}
+                className="w-24 px-3 py-1.5 bg-white/[0.06] border border-white/[0.12] rounded-lg
+                           text-cyan-300 text-sm font-mono text-right
+                           focus:outline-none focus:border-white/[0.25] transition-colors
+                           disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+            </div>
+          </div>
+          <input
+            type="range"
+            value={llmTemperature}
+            onChange={(e) => updateSetting('llm_temperature', Math.round(Number(e.target.value) * 10) / 10)}
+            min={0} max={2} step={0.1}
+            disabled={saving}
+            className="w-full h-1 rounded-full appearance-none cursor-pointer
+                       bg-white/[0.08] disabled:cursor-not-allowed"
+            style={{ accentColor: '#22d3ee' }}
+          />
+          <div className="flex justify-between text-[9px] text-[#6a7a8a] mt-1 px-0.5">
+            <span>保守 (0)</span>
+            <span>平衡 (0.7)</span>
+            <span>创意 (2.0)</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ---- 分隔线 ---- */}
+      <div className="border-t border-white/[0.08]" />
+
+      {/* ---- Max Tokens ---- */}
       <div className="space-y-3">
         <div>
           <h4 className="text-sm font-medium text-[#d0dce8] mb-1">Max Tokens</h4>
@@ -145,11 +229,11 @@ function ModelSettingsPanel() {
         {/* 预设选项 — pill 按钮 */}
         <div className="grid grid-cols-3 gap-2">
           {MAX_TOKEN_PRESETS.map((preset) => {
-            const isSelected = selected === preset.value
+            const isSelected = selectedTokens === preset.value
             return (
               <button
                 key={preset.label}
-                onClick={() => handleSelect(preset.value)}
+                onClick={() => handleSelectTokens(preset.value)}
                 disabled={saving}
                 className={`group relative px-3 py-3 rounded-lg border transition-all cursor-pointer
                   disabled:opacity-50 disabled:cursor-not-allowed
@@ -177,7 +261,7 @@ function ModelSettingsPanel() {
         <div className="model-config-section p-3 flex items-center justify-between">
           <span className="text-xs text-[#a0b0c8]">当前值</span>
           <span className="text-sm font-mono text-cyan-300">
-            {saving ? '保存中...' : selected === null ? '无上限' : selected.toLocaleString()}
+            {saving ? '保存中...' : selectedTokens === null ? '无上限' : selectedTokens.toLocaleString()}
           </span>
         </div>
       </div>
@@ -190,8 +274,6 @@ function ModelSettingsPanel() {
 // ================================================================
 
 export default function GameSettingsModal({ open, onClose }: GameSettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('model')
-
   return (
     <AnimatePresence>
       {open && (
@@ -216,10 +298,10 @@ export default function GameSettingsModal({ open, onClose }: GameSettingsModalPr
             transition={{ type: 'spring', damping: 28, stiffness: 350 }}
           >
             <div
-              className="model-config-modal w-full max-w-3xl h-[75vh]"
+              className="model-config-modal w-full max-w-xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="model-config-modal-inner h-full flex flex-col">
+              <div className="model-config-modal-inner flex flex-col max-h-[80vh]">
                 {/* Title bar */}
                 <div className="flex items-center justify-between px-5 py-4 border-b model-config-divider flex-shrink-0">
                   <h2 className="text-lg font-semibold text-white" style={{ fontFamily: 'var(--font-display)' }}>
@@ -233,24 +315,9 @@ export default function GameSettingsModal({ open, onClose }: GameSettingsModalPr
                   </button>
                 </div>
 
-                {/* Body — split layout */}
-                <div className="flex flex-1 min-h-0">
-                  {/* Left sidebar */}
-                  <div className="w-52 flex-shrink-0 border-r model-config-divider p-3 space-y-1 overflow-y-auto">
-                    {SETTINGS_TABS.map((meta) => (
-                      <SidebarItem
-                        key={meta.id}
-                        meta={meta}
-                        isActive={activeTab === meta.id}
-                        onClick={() => setActiveTab(meta.id)}
-                      />
-                    ))}
-                  </div>
-
-                  {/* Right panel */}
-                  <div className="flex-1 p-5 overflow-y-auto model-list-scroll">
-                    {activeTab === 'model' && <ModelSettingsPanel />}
-                  </div>
+                {/* Body — single scrollable panel */}
+                <div className="flex-1 p-5 overflow-y-auto model-list-scroll">
+                  <SettingsPanel />
                 </div>
 
                 {/* Footer */}

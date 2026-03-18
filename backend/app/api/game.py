@@ -11,16 +11,14 @@
 from __future__ import annotations
 
 import logging
-import random
-import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.game_store import GameStore, get_game_store
 from app.agents.agent_manager import get_agent_manager
-from app.config import AI_AVATARS, AI_NAMES, get_available_models
+from app.api.game_store import GameStore, get_game_store
+from app.config import AI_AVATARS, AI_NAMES, get_available_models, get_settings
 from app.db.database import get_db
 from app.db.schemas import GameDB, PlayerDB, RoundDB
 from app.engine.game_manager import (
@@ -58,10 +56,30 @@ class CreateGameRequest(BaseModel):
     ai_opponents: list[AIPlayerConfig] = Field(
         ..., min_length=1, max_length=5, description="AI 对手配置（1-5 个）"
     )
-    initial_chips: int = Field(1000, ge=100, le=100000, description="初始筹码")
-    ante: int = Field(10, ge=1, le=1000, description="底注")
-    max_bet: int = Field(200, ge=10, le=10000, description="单局下注上限")
-    max_turns: int = Field(10, ge=3, le=50, description="每局最大轮数")
+    initial_chips: int = Field(
+        default_factory=lambda: get_settings().default_initial_chips,
+        ge=100,
+        le=100000,
+        description="初始筹码",
+    )
+    ante: int = Field(
+        default_factory=lambda: get_settings().default_ante,
+        ge=1,
+        le=1000,
+        description="底注",
+    )
+    max_bet: int = Field(
+        default_factory=lambda: get_settings().default_max_bet,
+        ge=10,
+        le=10000,
+        description="单局下注上限",
+    )
+    max_turns: int = Field(
+        default_factory=lambda: get_settings().default_max_turns,
+        ge=3,
+        le=50,
+        description="每局最大轮数",
+    )
 
 
 class CreateGameResponse(BaseModel):
