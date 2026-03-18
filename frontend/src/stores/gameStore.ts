@@ -30,6 +30,7 @@ export interface ActionLogEntry {
   timestamp: number
 }
 import { createGame as apiCreateGame, getAvailableModels } from '../services/api'
+import { useUIStore } from './uiStore'
 
 // ---- AI 对手配置 (大厅用) ----
 
@@ -261,6 +262,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     } catch (err) {
       console.error('Failed to fetch models:', err)
       set({ modelsLoading: false })
+      useUIStore.getState().pushErrorPopup({
+        message: err instanceof Error ? err.message : '获取模型列表失败，请检查网络连接',
+        source: '加载模型',
+      })
     }
   },
 

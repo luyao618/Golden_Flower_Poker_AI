@@ -7,6 +7,7 @@ import CardDemoPage from './pages/CardDemoPage'
 import ResultPreview from './pages/ResultPreview'
 import ThoughtDemoPage from './pages/ThoughtDemoPage'
 import GameDemoPage from './pages/GameDemoPage'
+import ErrorPopup from './components/ErrorPopup'
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/demo/thought" element={<ThoughtDemoPage />} />
         <Route path="/demo/game" element={<GameDemoPage />} />
       </Routes>
+      <ErrorPopup />
     </BrowserRouter>
   )
 }

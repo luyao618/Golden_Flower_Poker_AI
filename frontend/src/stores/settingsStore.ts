@@ -5,6 +5,7 @@
 
 import { create } from 'zustand'
 import { getSettings, updateSettings } from '../services/api'
+import { useUIStore } from './uiStore'
 
 export interface SettingsState {
   /** LLM 最大生成 token 数，null 表示无上限（使用默认值） */
@@ -30,8 +31,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     try {
       const res = await getSettings()
       set({ maxTokens: res.llm_max_tokens })
-    } catch {
-      // ignore — 保持默认值
+    } catch (err) {
+      useUIStore.getState().pushErrorPopup({
+        message: err instanceof Error ? err.message : '获取设置失败',
+        source: '加载设置',
+      })
     } finally {
       set({ loading: false })
     }
@@ -42,8 +46,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     try {
       await updateSettings({ llm_max_tokens: value })
       set({ maxTokens: value })
-    } catch {
-      // ignore
+    } catch (err) {
+      useUIStore.getState().pushErrorPopup({
+        message: err instanceof Error ? err.message : '更新设置失败',
+        source: '保存设置',
+      })
     } finally {
       set({ saving: false })
     }
