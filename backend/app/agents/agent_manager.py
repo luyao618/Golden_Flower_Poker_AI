@@ -13,9 +13,8 @@ from typing import Any
 from app.agents.base_agent import BaseAgent
 from app.config import (
     AI_AVATARS,
-    ALL_MODELS,
     AI_NAMES,
-    get_settings,
+    ALL_MODELS,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,7 +75,7 @@ class AgentManager:
             used_names.add(name)
 
             # 分配头像
-            avatar = config.get("avatar", AI_AVATARS[i % len(AI_AVATARS)])
+            _avatar = config.get("avatar", AI_AVATARS[i % len(AI_AVATARS)])
 
             # 模型
             model_id = config.get("model_id", "openai-gpt4o-mini")

@@ -411,17 +411,24 @@ export async function removeAzureOpenAIModel(
 
 // ---- 游戏设置 ----
 
-/** 获取当前设置 */
-export async function getSettings(): Promise<{
+/** 设置响应类型 */
+export interface SettingsData {
   llm_max_tokens: number | null
-}> {
+  // AI 调用配置
+  llm_timeout: number
+  llm_max_retries: number
+  llm_temperature: number
+}
+
+/** 获取当前设置 */
+export async function getSettings(): Promise<SettingsData> {
   return request('/settings')
 }
 
-/** 更新设置 */
+/** 更新设置（部分更新，只需传需要修改的字段） */
 export async function updateSettings(
-  settings: { llm_max_tokens: number | null }
-): Promise<{ llm_max_tokens: number | null }> {
+  settings: Partial<SettingsData>
+): Promise<SettingsData> {
   return request('/settings', {
     method: 'POST',
     body: JSON.stringify(settings),

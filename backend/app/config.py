@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
-from pydantic import Field
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
@@ -22,8 +21,6 @@ class Settings(BaseSettings):
     # ---- 服务配置 ----
     app_name: str = "Golden Flower Poker AI"
     debug: bool = False
-    host: str = "0.0.0.0"
-    port: int = 8000
     log_level: str = "INFO"  # 日志级别: DEBUG/INFO/WARNING/ERROR
 
     # ---- 数据库 ----
@@ -122,8 +119,8 @@ def get_available_models() -> list[dict]:
     - SiliconFlow: 需要 SiliconFlow API Key 已配置，且模型由用户动态添加
     - Azure OpenAI: 需要 Azure OpenAI API Key 已配置，且模型由用户动态添加
     """
-    from app.services.provider_manager import get_provider_manager
     from app.services.copilot_auth import get_copilot_auth
+    from app.services.provider_manager import get_provider_manager
 
     provider_manager = get_provider_manager()
     copilot_auth = get_copilot_auth()
@@ -208,7 +205,8 @@ def add_siliconflow_model(siliconflow_model_id: str, display_name: str) -> str:
         return model_id
 
     SILICONFLOW_MODELS[model_id] = {
-        "model": f"openai/{siliconflow_model_id}",  # SiliconFlow 兼容 OpenAI 格式，通过 LiteLLM openai/ 前缀调用
+        # SiliconFlow 兼容 OpenAI，用 LiteLLM openai/ 前缀
+        "model": f"openai/{siliconflow_model_id}",
         "display_name": display_name,
         "provider": "siliconflow",
         "siliconflow_id": siliconflow_model_id,

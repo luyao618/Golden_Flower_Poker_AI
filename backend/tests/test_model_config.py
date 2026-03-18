@@ -1000,8 +1000,16 @@ class TestBaseAgentCopilotRouting:
                 settings.google_api_key = ""
                 mock_settings.return_value = settings
 
-                result = await agent.call_llm([{"role": "user", "content": "test"}])
-                assert result == '{"action":"fold"}'
+                with patch(
+                    "app.agents.base_agent.get_runtime_llm_config",
+                    return_value={
+                        "llm_temperature": 0.7,
+                        "llm_timeout": 5,
+                        "llm_max_retries": 1,
+                    },
+                ):
+                    result = await agent.call_llm([{"role": "user", "content": "test"}])
+                    assert result == '{"action":"fold"}'
 
     @pytest.mark.asyncio
     async def test_call_copilot_retries_on_failure(self):
@@ -1025,13 +1033,21 @@ class TestBaseAgentCopilotRouting:
             settings.llm_temperature = 0.7
             mock_settings.return_value = settings
 
-            with patch("app.services.copilot_auth.get_copilot_auth", return_value=mock_copilot):
-                with patch("asyncio.sleep", new_callable=AsyncMock):
-                    result = await agent._call_copilot(
-                        "gpt-4o", [{"role": "user", "content": "test"}], 0.7
-                    )
-                    assert result == '{"action":"raise"}'
-                    assert mock_copilot.call_copilot_api.call_count == 2
+            with patch(
+                "app.agents.base_agent.get_runtime_llm_config",
+                return_value={
+                    "llm_temperature": 0.7,
+                    "llm_timeout": 30,
+                    "llm_max_retries": 2,
+                },
+            ):
+                with patch("app.services.copilot_auth.get_copilot_auth", return_value=mock_copilot):
+                    with patch("asyncio.sleep", new_callable=AsyncMock):
+                        result = await agent._call_copilot(
+                            "gpt-4o", [{"role": "user", "content": "test"}], 0.7
+                        )
+                        assert result == '{"action":"raise"}'
+                        assert mock_copilot.call_copilot_api.call_count == 2
 
     @pytest.mark.asyncio
     async def test_call_copilot_exhausts_retries(self):
@@ -1053,12 +1069,20 @@ class TestBaseAgentCopilotRouting:
             settings.llm_temperature = 0.7
             mock_settings.return_value = settings
 
-            with patch("app.services.copilot_auth.get_copilot_auth", return_value=mock_copilot):
-                with patch("asyncio.sleep", new_callable=AsyncMock):
-                    with pytest.raises(LLMCallError, match="always fails"):
-                        await agent._call_copilot(
-                            "gpt-4o", [{"role": "user", "content": "test"}], 0.7
-                        )
+            with patch(
+                "app.agents.base_agent.get_runtime_llm_config",
+                return_value={
+                    "llm_temperature": 0.7,
+                    "llm_timeout": 30,
+                    "llm_max_retries": 2,
+                },
+            ):
+                with patch("app.services.copilot_auth.get_copilot_auth", return_value=mock_copilot):
+                    with patch("asyncio.sleep", new_callable=AsyncMock):
+                        with pytest.raises(LLMCallError, match="always fails"):
+                            await agent._call_copilot(
+                                "gpt-4o", [{"role": "user", "content": "test"}], 0.7
+                            )
 
 
 class TestBaseAgentModelValidation:

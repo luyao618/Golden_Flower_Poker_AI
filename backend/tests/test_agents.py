@@ -46,6 +46,19 @@ from app.models.game import (
 from app.models.card import Card, Rank, Suit
 
 
+def _make_llm_config(
+    temperature: float = 0.7,
+    timeout: int = 5,
+    max_retries: int = 3,
+) -> dict:
+    """构造 get_runtime_llm_config 返回值"""
+    return {
+        "llm_temperature": temperature,
+        "llm_timeout": timeout,
+        "llm_max_retries": max_retries,
+    }
+
+
 # ============================================================
 # BaseAgent 初始化
 # ============================================================
@@ -407,9 +420,13 @@ class TestCallLLM:
                 settings.google_api_key = ""
                 mock_settings.return_value = settings
 
-                result = await agent.call_llm([{"role": "user", "content": "test"}])
-                assert result == '{"result": "ok"}'
-                assert mock_llm.call_count == 3
+                with patch(
+                    "app.agents.base_agent.get_runtime_llm_config",
+                    return_value=_make_llm_config(max_retries=3),
+                ):
+                    result = await agent.call_llm([{"role": "user", "content": "test"}])
+                    assert result == '{"result": "ok"}'
+                    assert mock_llm.call_count == 3
 
     @pytest.mark.asyncio
     async def test_all_retries_exhausted(self):
@@ -428,8 +445,12 @@ class TestCallLLM:
                 settings.google_api_key = ""
                 mock_settings.return_value = settings
 
-                with pytest.raises(LLMCallError, match="failed after 3 retries"):
-                    await agent.call_llm([{"role": "user", "content": "test"}])
+                with patch(
+                    "app.agents.base_agent.get_runtime_llm_config",
+                    return_value=_make_llm_config(max_retries=3),
+                ):
+                    with pytest.raises(LLMCallError, match="failed after 3 retries"):
+                        await agent.call_llm([{"role": "user", "content": "test"}])
 
     @pytest.mark.asyncio
     async def test_empty_content_raises_error(self):
@@ -452,8 +473,12 @@ class TestCallLLM:
                 settings.google_api_key = ""
                 mock_settings.return_value = settings
 
-                with pytest.raises(LLMCallError):
-                    await agent.call_llm([{"role": "user", "content": "test"}])
+                with patch(
+                    "app.agents.base_agent.get_runtime_llm_config",
+                    return_value=_make_llm_config(max_retries=3),
+                ):
+                    with pytest.raises(LLMCallError):
+                        await agent.call_llm([{"role": "user", "content": "test"}])
 
     @pytest.mark.asyncio
     async def test_anthropic_model_call(self):
@@ -762,9 +787,13 @@ class TestDecisionFlow:
                 settings.google_api_key = ""
                 mock_settings.return_value = settings
 
-                # LLM 调用应该抛出 LLMCallError
-                with pytest.raises(LLMCallError):
-                    await agent.call_llm([{"role": "user", "content": "test"}])
+                with patch(
+                    "app.agents.base_agent.get_runtime_llm_config",
+                    return_value=_make_llm_config(max_retries=1),
+                ):
+                    # LLM 调用应该抛出 LLMCallError
+                    with pytest.raises(LLMCallError):
+                        await agent.call_llm([{"role": "user", "content": "test"}])
 
                 # 调用方可以 catch 后降级
                 available = [GameAction.CALL, GameAction.FOLD]
@@ -1342,13 +1371,19 @@ class TestMakeDecisionLLMFailure:
                 settings.google_api_key = ""
                 mock_settings.return_value = settings
 
-                decision = await agent.make_decision(game, player)
+                with patch(
+                    "app.agents.base_agent.get_runtime_llm_config",
+                    return_value=_make_llm_config(max_retries=1),
+                ):
+                    decision = await agent.make_decision(game, player)
 
-                # 应降级为 CALL（最安全的操作）
-                assert decision.action == GameAction.CALL
-                assert decision.thought is not None
-                assert "失败" in decision.thought.reasoning or "降级" in decision.thought.reasoning
-                assert decision.thought.confidence == 0.0
+                    # 应降级为 CALL（最安全的操作）
+                    assert decision.action == GameAction.CALL
+                    assert decision.thought is not None
+                    assert (
+                        "失败" in decision.thought.reasoning or "降级" in decision.thought.reasoning
+                    )
+                    assert decision.thought.confidence == 0.0
 
     @pytest.mark.asyncio
     async def test_llm_failure_fallback_fold_when_no_call(self):
@@ -1392,8 +1427,12 @@ class TestMakeDecisionLLMFailure:
                 settings.google_api_key = ""
                 mock_settings.return_value = settings
 
-                decision = await agent.make_decision(game, players[0])
-                assert decision.action == GameAction.FOLD
+                with patch(
+                    "app.agents.base_agent.get_runtime_llm_config",
+                    return_value=_make_llm_config(max_retries=1),
+                ):
+                    decision = await agent.make_decision(game, players[0])
+                    assert decision.action == GameAction.FOLD
 
 
 class TestMakeDecisionWithContext:
@@ -1605,11 +1644,15 @@ class TestMakeDecisionThoughtRecording:
                 settings.google_api_key = ""
                 mock_settings.return_value = settings
 
-                decision = await agent.make_decision(game, player)
+                with patch(
+                    "app.agents.base_agent.get_runtime_llm_config",
+                    return_value=_make_llm_config(max_retries=1),
+                ):
+                    decision = await agent.make_decision(game, player)
 
-                thoughts = agent.get_round_thoughts(1)
-                assert len(thoughts) == 1
-                assert thoughts[0].confidence == 0.0
+                    thoughts = agent.get_round_thoughts(1)
+                    assert len(thoughts) == 1
+                    assert thoughts[0].confidence == 0.0
 
 
 class TestMakeDecisionEdgeCases:
