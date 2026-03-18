@@ -28,6 +28,15 @@ export interface WinAnimationState {
   isPlaying: boolean
 }
 
+// ---- 通用错误弹窗状态 ----
+
+export interface ErrorPopupState {
+  /** 错误消息 */
+  message: string
+  /** 错误来源（可选，用于显示标题） */
+  source?: string
+}
+
 // ---- Copilot 错误状态 ----
 
 export interface CopilotErrorState {
@@ -68,6 +77,9 @@ export interface UIState {
   // 人类玩家是否已看牌（触发翻牌动画）
   hasLookedAtCards: boolean
 
+  // 通用错误弹窗（队列，支持多条错误堆叠显示）
+  errorPopups: ErrorPopupState[]
+
   // Copilot 错误弹窗
   copilotError: CopilotErrorState | null
 
@@ -99,6 +111,9 @@ export interface UIState {
   clearWinAnimation: () => void
   setShowPlayerCards: (show: boolean) => void
   setHasLookedAtCards: (looked: boolean) => void
+  pushErrorPopup: (error: ErrorPopupState) => void
+  dismissErrorPopup: (index: number) => void
+  clearAllErrorPopups: () => void
   setCopilotError: (error: CopilotErrorState | null) => void
   toggleThoughtDrawer: (agentId?: string) => void
   toggleGameLog: () => void
@@ -124,6 +139,7 @@ export const useUIStore = create<UIState>((set) => ({
   winAnimation: null,
   showPlayerCards: false,
   hasLookedAtCards: false,
+  errorPopups: [],
   copilotError: null,
   isThoughtDrawerOpen: false,
   thoughtDrawerAgentId: null,
@@ -189,6 +205,19 @@ export const useUIStore = create<UIState>((set) => ({
   setHasLookedAtCards: (looked) =>
     set({ hasLookedAtCards: looked }),
 
+  pushErrorPopup: (error) =>
+    set((state) => ({
+      errorPopups: [...state.errorPopups, error],
+    })),
+
+  dismissErrorPopup: (index) =>
+    set((state) => ({
+      errorPopups: state.errorPopups.filter((_, i) => i !== index),
+    })),
+
+  clearAllErrorPopups: () =>
+    set({ errorPopups: [] }),
+
   setCopilotError: (error) =>
     set({ copilotError: error }),
 
@@ -225,6 +254,7 @@ export const useUIStore = create<UIState>((set) => ({
       winAnimation: null,
       showPlayerCards: false,
       hasLookedAtCards: false,
+      errorPopups: [],
       copilotError: null,
       isThoughtDrawerOpen: false,
       thoughtDrawerAgentId: null,

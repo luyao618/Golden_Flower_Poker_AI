@@ -140,6 +140,7 @@ export function useGame(config: UseGameConfig | null): UseGameReturn {
   const setShowPlayerCards = useUIStore((s) => s.setShowPlayerCards)
   const setHasLookedAtCards = useUIStore((s) => s.setHasLookedAtCards)
   const setCopilotError = useUIStore((s) => s.setCopilotError)
+  const pushErrorPopup = useUIStore((s) => s.pushErrorPopup)
   const setCompareRevealedCards = useUIStore((s) => s.setCompareRevealedCards)
   const clearCompareRevealedCards = useUIStore((s) => s.clearCompareRevealedCards)
 
@@ -386,7 +387,12 @@ export function useGame(config: UseGameConfig | null): UseGameReturn {
         case 'error': {
           const data = event.data as ErrorData
           console.error('[Game] Server error:', data.message)
-          // 将错误消息显示为系统聊天消息
+          // 弹出错误弹窗，让用户清楚看到出了什么问题
+          pushErrorPopup({
+            message: data.message,
+            source: '操作失败',
+          })
+          // 同时保留聊天消息中的记录
           const errorMsg: ChatMessage = {
             id: `error-${Date.now()}`,
             game_id: gameId,
@@ -436,6 +442,7 @@ export function useGame(config: UseGameConfig | null): UseGameReturn {
       setShowPlayerCards,
       setHasLookedAtCards,
       setCopilotError,
+      pushErrorPopup,
       setCompareRevealedCards,
       clearCompareRevealedCards,
     ],
