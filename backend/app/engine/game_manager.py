@@ -547,12 +547,13 @@ def settle_round(game: GameState) -> RoundResult:
         # 仅剩一人 → 直接获胜
         winner = active_players[0]
         win_method = "其他玩家全部弃牌"
-        hands_revealed = None
     else:
         # 多人存活 → 强制比牌（最大轮数到达）
         winner = _find_best_hand_player(active_players)
         win_method = "最大轮数到达，强制比牌"
-        hands_revealed = {p.id: p.hand for p in active_players if p.hand is not None}
+
+    # 始终记录所有玩家的手牌，供心路历程面板展示
+    hands_revealed = {p.id: p.hand for p in game.players if p.hand is not None}
 
     # 计算筹码变化
     pot = round_state.pot

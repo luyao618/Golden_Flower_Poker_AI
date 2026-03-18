@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import type { ThoughtRecord, ExperienceReview, RoundNarrative } from '../../types/game'
+import type { ThoughtRecord, ExperienceReview, RoundNarrative, RoundResult, Card } from '../../types/game'
 import { getRoundThoughts, getExperienceReviews, getRoundNarrative } from '../../services/api'
 import { useSettingsStore } from '../../stores/settingsStore'
 import ThoughtCard from './ThoughtCard'
 import NarrativeView from './NarrativeView'
+import CardFace from '../Cards/CardFace'
 
 // ---- 经验回顾触发类型显示 ----
 
@@ -40,6 +41,8 @@ interface ThoughtTimelineProps {
   agentId: string
   /** 已完成的局数列表 */
   completedRounds: number[]
+  /** 完整的局历史（含手牌数据） */
+  roundHistory: RoundResult[]
 }
 
 /** 视图模式 */
@@ -56,6 +59,7 @@ export default function ThoughtTimeline({
   gameId,
   agentId,
   completedRounds,
+  roundHistory,
 }: ThoughtTimelineProps) {
   const [selectedRound, setSelectedRound] = useState<number | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('timeline')
@@ -64,6 +68,14 @@ export default function ThoughtTimeline({
   const [narrative, setNarrative] = useState<RoundNarrative | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // 从 roundHistory 中查找选中局该 AI 的手牌
+  const agentHandCards: Card[] | null = useMemo(() => {
+    if (!selectedRound) return null
+    const roundResult = roundHistory.find((r) => r.round_number === selectedRound)
+    if (!roundResult?.hands_revealed) return null
+    return roundResult.hands_revealed[agentId] ?? null
+  }, [roundHistory, selectedRound, agentId])
 
   // 默认选中最新一局
   useEffect(() => {
@@ -206,6 +218,11 @@ export default function ThoughtTimeline({
                 exit={{ opacity: 0 }}
                 className="p-3"
               >
+                {/* 本局手牌展示 */}
+                {agentHandCards && agentHandCards.length > 0 && (
+                  <HandCardsDisplay cards={agentHandCards} />
+                )}
+
                 {/* 经验回顾节点（如果本局触发了） */}
                 {reviews.map((review, i) => (
                   <ReviewNode key={`review-${i}`} review={review} />
@@ -305,6 +322,35 @@ export default function ThoughtTimeline({
         )}
       </div>
     </div>
+  )
+}
+
+// ---- 本局手牌展示 ----
+
+function HandCardsDisplay({ cards }: { cards: Card[] }) {
+  return (
+    <motion.div
+      className="mb-3 px-3 py-2.5 rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5"
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      style={{
+        boxShadow: '0 0 12px rgba(0,212,255,0.06)',
+      }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[var(--color-primary)]/70 text-[10px] font-medium tracking-wide"
+          style={{ fontFamily: 'var(--font-display)' }}>
+          本局手牌
+        </span>
+        <div className="flex-1 h-[1px] bg-[var(--color-primary)]/10" />
+      </div>
+      <div className="flex items-center gap-1.5 justify-center">
+        {cards.map((card, i) => (
+          <CardFace key={`${card.suit}-${card.rank}-${i}`} card={card} faceUp size="sm" />
+        ))}
+      </div>
+    </motion.div>
   )
 }
 

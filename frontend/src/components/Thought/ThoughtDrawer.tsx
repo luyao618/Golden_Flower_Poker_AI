@@ -144,6 +144,7 @@ export default function ThoughtDrawer() {
                   gameId={gameId}
                   agentId={activeAgentId}
                   completedRounds={completedRounds}
+                  roundHistory={roundHistory}
                 />
               ) : (
                 <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">

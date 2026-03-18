@@ -634,10 +634,8 @@ async def handle_player_chat(
     """处理人类玩家发送的聊天消息
 
     流程：
-    1. 创建 ChatMessage 并广播
-    2. 创建 must_respond 触发事件
-    3. 收集 AI 旁观者反应
-    4. 广播 AI 回应
+    1. 创建 ChatMessage 并立即广播（同步，不阻塞）
+    2. 将 AI 回应生成放入后台任务（异步，不阻塞 WebSocket 消息循环）
     """
     player = game.get_player_by_id(player_id)
     if player is None:
@@ -647,7 +645,7 @@ async def handle_player_chat(
     if game.current_round:
         round_number = game.current_round.round_number
 
-    # 创建并广播玩家消息
+    # 创建并广播玩家消息（立即完成）
     player_msg = ChatMessage(
         game_id=game_id,
         round_number=round_number,
@@ -677,46 +675,86 @@ async def handle_player_chat(
     except Exception as e:
         logger.warning("Failed to persist player chat message: %s", e)
 
-    # 创建触发事件并收集 AI 反应
-    trigger = create_player_message_event(player_id, player.name, content)
-
-    # 获取所有活跃的 AI Agent 作为旁观者（排除已弃牌的）
-    all_agents = agent_manager.get_agents_for_game(game_id)
-    bystanders = []
-    for a in all_agents:
-        p = game.get_player_by_id(a.agent_id)
-        if p is not None and p.is_active:
-            bystanders.append(a)
-    if not bystanders:
-        return
-
-    # 构建各 Agent 的状态信息
-    agent_states = _build_agent_states(game, bystanders)
-
-    reactions = await chat_engine.collect_bystander_reactions(
-        event=trigger,
-        bystanders=bystanders,
-        chat_context=chat_context,
-        agent_states=agent_states,
+    # AI 回应在后台任务中异步执行，不阻塞 WebSocket 消息循环
+    asyncio.create_task(
+        _process_ai_chat_replies(
+            game_id=game_id,
+            game=game,
+            player_id=player_id,
+            player_name=player.name,
+            content=content,
+            round_number=round_number,
+            ws_manager=ws_manager,
+            agent_manager=agent_manager,
+            chat_engine=chat_engine,
+            chat_context=chat_context,
+        )
     )
 
-    # 广播 AI 回应
-    for reaction in reactions:
-        msg = reaction.to_chat_message(game_id=game_id, round_number=round_number)
-        if msg is not None:
-            chat_context.add_message(msg)
-            await ws_manager.broadcast(game_id, event_chat_message(msg))
-            # 持久化 AI 回应消息（T4.4）
-            try:
-                db = await _get_db_session()
+
+async def _process_ai_chat_replies(
+    game_id: str,
+    game: GameState,
+    player_id: str,
+    player_name: str,
+    content: str,
+    round_number: int,
+    ws_manager: WebSocketManager,
+    agent_manager: AgentManager,
+    chat_engine: ChatEngine,
+    chat_context: ChatContext,
+) -> None:
+    """后台任务：收集 AI 旁观者反应并广播
+
+    从 handle_player_chat 中拆出，避免 LLM 调用阻塞 WebSocket 消息循环。
+    """
+    try:
+        # 创建触发事件并收集 AI 反应
+        trigger = create_player_message_event(player_id, player_name, content)
+
+        # 获取所有活跃的 AI Agent 作为旁观者（排除已弃牌的）
+        all_agents = agent_manager.get_agents_for_game(game_id)
+        bystanders = []
+        for a in all_agents:
+            p = game.get_player_by_id(a.agent_id)
+            if p is not None and p.is_active:
+                bystanders.append(a)
+        if not bystanders:
+            return
+
+        # 构建各 Agent 的状态信息
+        agent_states = _build_agent_states(game, bystanders)
+
+        reactions = await chat_engine.collect_bystander_reactions(
+            event=trigger,
+            bystanders=bystanders,
+            chat_context=chat_context,
+            agent_states=agent_states,
+        )
+
+        # 广播 AI 回应
+        for reaction in reactions:
+            msg = reaction.to_chat_message(game_id=game_id, round_number=round_number)
+            if msg is not None:
+                chat_context.add_message(msg)
+                await ws_manager.broadcast(game_id, event_chat_message(msg))
+                # 持久化 AI 回应消息（T4.4）
                 try:
-                    await persist_chat_message(db, msg)
-                    await db.commit()
-                finally:
-                    await db.close()
-            except Exception as e:
-                logger.warning("Failed to persist AI response chat message: %s", e)
-            await asyncio.sleep(0.3)  # 间隔一小段时间，模拟打字
+                    db = await _get_db_session()
+                    try:
+                        await persist_chat_message(db, msg)
+                        await db.commit()
+                    finally:
+                        await db.close()
+                except Exception as e:
+                    logger.warning("Failed to persist AI response chat message: %s", e)
+                await asyncio.sleep(0.3)  # 间隔一小段时间，模拟打字
+    except Exception as e:
+        logger.error(
+            "AI 聊天回复后台任务异常 — game=%s, error=%s",
+            game_id,
+            e,
+        )
 
 
 # ---- Internal Helpers ----
