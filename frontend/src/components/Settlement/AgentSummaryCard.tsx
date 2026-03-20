@@ -105,10 +105,15 @@ export default function AgentSummaryCard({
   if (loading) {
     return (
       <div className="bg-[var(--bg-surface)]/20 border border-[var(--border-default)] rounded-xl p-6">
-        <div className="flex items-center gap-3">
-          <div className="space-y-2 flex-1">
-            <div className="h-4 w-24 bg-[var(--bg-elevated)]/40 rounded animate-pulse" />
-            <div className="h-3 w-16 bg-[var(--bg-elevated)]/30 rounded animate-pulse" />
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5 flex-1">
+            <div className="w-5 h-5 border-2 border-[var(--color-primary)]/30 border-t-[var(--color-primary)] rounded-full animate-spin shrink-0" />
+            <div>
+              <span className="text-sm font-semibold text-[var(--text-primary)]">{player.name}</span>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                AI 正在生成总结报告...
+              </p>
+            </div>
           </div>
         </div>
       </div>

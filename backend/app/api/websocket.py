@@ -20,6 +20,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.agent_manager import AgentManager, get_agent_manager
@@ -40,11 +41,12 @@ from app.agents.chat_engine import (
 from app.api.game_store import GameStore, get_game_store
 from app.api.persistence import (
     persist_chat_message,
+    persist_game_summary,
     persist_round_narrative,
     persist_thought_record,
 )
 from app.db.database import get_db
-from app.db.schemas import PlayerDB, RoundDB
+from app.db.schemas import ExperienceReviewDB, PlayerDB, RoundDB, RoundNarrativeDB
 from app.engine.game_manager import (
     ActionResult,
     GameError,
@@ -102,6 +104,8 @@ class WebSocketManager:
         self._connections: dict[str, dict[str, WebSocket]] = {}
         # game_id -> ChatContext (per-game chat context)
         self._chat_contexts: dict[str, ChatContext] = {}
+        # game_id -> list[asyncio.Task] (游戏总结生成任务，支持取消)
+        self._summary_tasks: dict[str, list[asyncio.Task]] = {}
 
     async def connect(self, game_id: str, player_id: str, websocket: WebSocket) -> None:
         """接受 WebSocket 连接并注册"""
@@ -129,10 +133,33 @@ class WebSocketManager:
             self._chat_contexts[game_id] = ChatContext()
         return self._chat_contexts[game_id]
 
+    def add_summary_task(self, game_id: str, task: asyncio.Task) -> None:
+        """注册一个游戏总结生成任务"""
+        if game_id not in self._summary_tasks:
+            self._summary_tasks[game_id] = []
+        self._summary_tasks[game_id].append(task)
+
+    def cancel_summary_tasks(self, game_id: str) -> int:
+        """取消某场游戏的所有总结生成任务
+
+        Returns:
+            被取消的任务数量
+        """
+        tasks = self._summary_tasks.pop(game_id, [])
+        cancelled = 0
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+                cancelled += 1
+        if cancelled > 0:
+            logger.info("取消总结生成任务 — game=%s, cancelled=%d", game_id, cancelled)
+        return cancelled
+
     def remove_game(self, game_id: str) -> None:
-        """清除某场游戏的所有连接和聊天上下文"""
+        """清除某场游戏的所有连接、聊天上下文和总结任务"""
         self._connections.pop(game_id, None)
         self._chat_contexts.pop(game_id, None)
+        self.cancel_summary_tasks(game_id)
 
     async def send_to_player(self, game_id: str, player_id: str, event: dict[str, Any]) -> None:
         """向单个玩家发送事件"""
@@ -853,6 +880,23 @@ async def _handle_round_end(
                         )
                     )
 
+    # 游戏整体结束时，异步生成各 AI 玩家的游戏总结报告
+    # 注：稍作延迟以等待最后一局的叙事生成完成，确保总结能包含所有局的叙事
+    if game.status == "finished" and agent_manager is not None:
+        for player in game.players:
+            if player.player_type != PlayerType.HUMAN:
+                agent = agent_manager.get_agent(game_id, player.id)
+                if agent is not None:
+                    task = asyncio.create_task(
+                        _generate_and_persist_game_summary(
+                            game_id=game_id,
+                            game=game,
+                            agent=agent,
+                            player=player,
+                        )
+                    )
+                    ws_manager.add_summary_task(game_id, task)
+
 
 async def _generate_and_persist_narrative(
     game_id: str,
@@ -964,6 +1008,144 @@ async def _generate_and_persist_narrative(
             game_id,
             player.name,
             round_number,
+            e,
+        )
+
+
+async def _generate_and_persist_game_summary(
+    game_id: str,
+    game: GameState,
+    agent: BaseAgent,
+    player: Player,
+) -> None:
+    """为指定 AI 玩家生成整场游戏总结并持久化（后台任务）
+
+    从游戏历史和数据库中收集统计数据、叙事记录和经验回顾，
+    调用 ThoughtReporter 生成游戏总结报告，然后写入数据库。
+    此函数通过 asyncio.create_task 在后台执行，不阻塞游戏主流程。
+
+    Args:
+        game_id: 游戏 ID
+        game: 完整游戏状态（含 round_history）
+        agent: AI Agent 实例
+        player: 对应的玩家对象
+    """
+    try:
+        reporter = ThoughtReporter(agent)
+
+        # 等待一段时间，让最后一局的叙事生成任务有机会完成
+        # （叙事和总结都通过 asyncio.create_task 并发启动，
+        #   总结需要从 DB 读取叙事，所以需要等叙事先写入）
+        await asyncio.sleep(5)
+
+        # 从 round_history 统计该玩家的游戏数据
+        rounds_played = len(game.round_history)
+        rounds_won = 0
+        total_chips_won = 0
+        total_chips_lost = 0
+        biggest_win = 0
+        biggest_loss = 0
+        fold_count = 0
+
+        for rr in game.round_history:
+            chip_change = rr.player_chip_changes.get(player.id, 0)
+            if rr.winner_id == player.id:
+                rounds_won += 1
+            if chip_change > 0:
+                total_chips_won += chip_change
+                biggest_win = max(biggest_win, chip_change)
+            elif chip_change < 0:
+                total_chips_lost += abs(chip_change)
+                biggest_loss = max(biggest_loss, abs(chip_change))
+                # 负筹码变化且不是赢家 → 可能弃牌或比牌失败
+                # 简单估算弃牌：筹码损失较小的局（损失 < 底池的一半）
+                if rr.winner_id != player.id and abs(chip_change) < rr.pot * 0.3:
+                    fold_count += 1
+
+        fold_rate = f"{fold_count / rounds_played * 100:.0f}%" if rounds_played > 0 else "0%"
+
+        # 从数据库查询已持久化的叙事和经验回顾
+        db = await _get_db_session()
+        try:
+            # 查询叙事记录
+            narrative_stmt = (
+                select(RoundNarrativeDB)
+                .where(
+                    RoundNarrativeDB.game_id == game_id,
+                    RoundNarrativeDB.agent_id == player.id,
+                )
+                .order_by(RoundNarrativeDB.round_number)
+            )
+            narrative_result = await db.execute(narrative_stmt)
+            narrative_records = narrative_result.scalars().all()
+            all_narratives = (
+                "\n".join(f"第{r.round_number}局: {r.narrative}" for r in narrative_records)
+                if narrative_records
+                else "（无叙事记录）"
+            )
+
+            # 查询经验回顾记录
+            review_stmt = (
+                select(ExperienceReviewDB)
+                .where(
+                    ExperienceReviewDB.game_id == game_id,
+                    ExperienceReviewDB.agent_id == player.id,
+                )
+                .order_by(ExperienceReviewDB.triggered_at_round)
+            )
+            review_result = await db.execute(review_stmt)
+            review_records = review_result.scalars().all()
+            all_reviews = (
+                "\n".join(
+                    f"第{r.triggered_at_round}局回顾: {r.insight or ''}" for r in review_records
+                )
+                if review_records
+                else "（无经验回顾）"
+            )
+        finally:
+            await db.close()
+
+        # 构建对手信息
+        opponents_info_parts: list[str] = []
+        for p in game.players:
+            if p.id != player.id:
+                opponents_info_parts.append(f"{p.name}: 最终筹码 {p.chips}")
+        opponents_info = (
+            "\n".join(opponents_info_parts) if opponents_info_parts else "（无对手信息）"
+        )
+
+        # 调用 LLM 生成游戏总结
+        summary = await reporter.generate_game_summary(
+            rounds_played=rounds_played,
+            rounds_won=rounds_won,
+            total_chips_won=total_chips_won,
+            total_chips_lost=total_chips_lost,
+            biggest_win=biggest_win,
+            biggest_loss=biggest_loss,
+            fold_rate=fold_rate,
+            all_narratives=all_narratives,
+            all_reviews=all_reviews,
+            opponents_info=opponents_info,
+        )
+
+        # 持久化到数据库
+        db = await _get_db_session()
+        try:
+            await persist_game_summary(db, game_id, summary)
+            await db.commit()
+            logger.info(
+                "游戏总结生成成功 — game=%s, agent=%s",
+                game_id,
+                player.name,
+            )
+        finally:
+            await db.close()
+
+    except Exception as e:
+        logger.warning(
+            "游戏总结生成失败 — game=%s, agent=%s: %s",
+            game_id,
+            player.name,
             e,
         )
 
