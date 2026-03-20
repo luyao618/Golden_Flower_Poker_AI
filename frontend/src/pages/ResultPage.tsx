@@ -1,13 +1,17 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useGameStore } from '../stores/gameStore'
 import Leaderboard from '../components/Settlement/Leaderboard'
 import type { LeaderboardPlayer } from '../components/Settlement/Leaderboard'
 import AgentSummaryCard from '../components/Settlement/AgentSummaryCard'
-import { getGameSummary, getExperienceReviews, getGameState } from '../services/api'
+import { getGameSummary, getExperienceReviews, getGameState, cancelGameSummaries } from '../services/api'
 import type { GameSummary, ExperienceReview, Player } from '../types/game'
 import resultBg from '../assets/result-bg.png'
+
+/** 轮询配置 */
+const POLL_INTERVAL = 3000  // 每 3 秒重试一次
+const MAX_POLL_ATTEMPTS = 40 // 最多重试 40 次（约 2 分钟）
 
 export default function ResultPage() {
   const { id } = useParams<{ id: string }>()
@@ -26,6 +30,11 @@ export default function ResultPage() {
   const [reviews, setReviews] = useState<Record<string, ExperienceReview[]>>({})
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({})
   const [pageLoading, setPageLoading] = useState(true)
+
+  // 用于跟踪是否已离开页面（取消轮询）
+  const cancelledRef = useRef(false)
+  // 跟踪轮询定时器，便于清理
+  const pollTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
 
   // 如果 store 中没有 players 数据（例如直接访问 URL），从 API 加载
   useEffect(() => {
@@ -87,7 +96,7 @@ export default function ResultPage() {
       }))
   }, [players, initialChips])
 
-  // 加载所有 AI 的 summary 和 reviews
+  // 加载所有 AI 的 summary 和 reviews（支持轮询重试）
   const loadSummaries = useCallback(async () => {
     if (!gameId || aiPlayers.length === 0) return
 
@@ -95,29 +104,76 @@ export default function ResultPage() {
     aiPlayers.forEach((ai) => { loadingMap[ai.id] = true })
     setLoadingStates(loadingMap)
 
+    // 先加载 reviews（不需要等待总结生成）
     await Promise.allSettled(
       aiPlayers.map(async (ai) => {
         try {
-          const [summary, reviewList] = await Promise.all([
-            getGameSummary(gameId, ai.id),
-            getExperienceReviews(gameId, ai.id),
-          ])
-          setSummaries((prev) => ({ ...prev, [ai.id]: summary }))
+          const reviewList = await getExperienceReviews(gameId, ai.id)
           setReviews((prev) => ({ ...prev, [ai.id]: reviewList }))
         } catch (err) {
-          console.error(`Failed to load summary for ${ai.name}:`, err)
-        } finally {
-          setLoadingStates((prev) => ({ ...prev, [ai.id]: false }))
+          console.error(`Failed to load reviews for ${ai.name}:`, err)
         }
       }),
     )
-  }, [gameId, aiPlayers])
+
+    // 轮询加载 summary（可能还在后台生成中）
+    for (const ai of aiPlayers) {
+      pollSummary(ai.id, ai.name, 0)
+    }
+  }, [gameId, aiPlayers]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** 轮询加载单个 AI 的总结报告 */
+  const pollSummary = useCallback((agentId: string, agentName: string, attempt: number) => {
+    if (cancelledRef.current) return
+
+    getGameSummary(gameId, agentId)
+      .then((summary) => {
+        if (!cancelledRef.current) {
+          setSummaries((prev) => ({ ...prev, [agentId]: summary }))
+          setLoadingStates((prev) => ({ ...prev, [agentId]: false }))
+        }
+      })
+      .catch(() => {
+        if (cancelledRef.current) return
+
+        if (attempt < MAX_POLL_ATTEMPTS) {
+          // 总结尚未生成完毕，稍后重试
+          const timer = setTimeout(() => {
+            pollTimersRef.current.delete(timer)
+            pollSummary(agentId, agentName, attempt + 1)
+          }, POLL_INTERVAL)
+          pollTimersRef.current.add(timer)
+        } else {
+          // 超过最大重试次数，放弃
+          console.error(`Summary for ${agentName} not available after ${MAX_POLL_ATTEMPTS} attempts`)
+          setLoadingStates((prev) => ({ ...prev, [agentId]: false }))
+        }
+      })
+  }, [gameId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!pageLoading && aiPlayers.length > 0) {
       loadSummaries()
     }
   }, [pageLoading, aiPlayers.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 离开页面时：取消前端轮询 + 通知后端取消生成任务
+  useEffect(() => {
+    return () => {
+      cancelledRef.current = true
+      // 清理所有轮询定时器
+      for (const timer of pollTimersRef.current) {
+        clearTimeout(timer)
+      }
+      pollTimersRef.current.clear()
+      // 通知后端取消还在进行的总结生成
+      if (gameId) {
+        cancelGameSummaries(gameId).catch(() => {
+          // 静默失败 — 后端任务可能已完成
+        })
+      }
+    }
+  }, [gameId])
 
   // 返回大厅
   const handleBackToLobby = () => {

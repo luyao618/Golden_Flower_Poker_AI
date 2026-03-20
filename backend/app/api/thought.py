@@ -6,6 +6,7 @@
 - GET /{game_id}/narrative/{agent_id}/round/{round_num}  局叙事
 - GET /{game_id}/summary/{agent_id}                     游戏总结
 - GET /{game_id}/reviews/{agent_id}                     经验回顾列表
+- POST /{game_id}/cancel-summaries                      取消总结生成
 """
 
 from __future__ import annotations
@@ -349,3 +350,20 @@ async def get_experience_reviews(
         reviews=reviews,
         count=len(reviews),
     )
+
+
+@router.post(
+    "/{game_id}/cancel-summaries",
+    summary="取消游戏总结生成",
+)
+async def cancel_game_summaries(game_id: str):
+    """取消某场游戏正在进行的总结生成任务
+
+    当用户离开结算页面（返回大厅或再来一局）时调用，
+    释放后台 LLM 资源。
+    """
+    from app.api.websocket import get_ws_manager
+
+    ws_manager = get_ws_manager()
+    cancelled = ws_manager.cancel_summary_tasks(game_id)
+    return {"game_id": game_id, "cancelled": cancelled}

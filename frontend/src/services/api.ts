@@ -205,6 +205,11 @@ export async function getExperienceReviews(
   return res.reviews
 }
 
+/** 取消某场游戏正在进行的总结生成任务 */
+export async function cancelGameSummaries(gameId: string): Promise<void> {
+  await request(`/game/${gameId}/cancel-summaries`, { method: 'POST' })
+}
+
 // ---- 聊天 ----
 
 /** 获取聊天历史 */
