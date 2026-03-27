@@ -111,7 +111,7 @@ export default function AgentSummaryCard({
             <div>
               <span className="text-sm font-semibold text-[var(--text-primary)]">{player.name}</span>
               <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                AI 正在生成总结报告...
+                AI 正在加载策略调整记录...
               </p>
             </div>
           </div>
@@ -254,50 +254,60 @@ export default function AgentSummaryCard({
                   </p>
                 </CollapsibleSection>
               )}
-
-              {/* 经验回顾记录 */}
-              {reviews.length > 0 && (
-                <CollapsibleSection title="策略调整记录" badge={reviews.length}>
-                  <div className="space-y-4">
-                    {reviews.map((review, i) => (
-                      <div key={i} className="border-l-2 border-[var(--color-gold)]/30 pl-3 space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[var(--color-gold)]/80 text-xs font-medium">
-                            {TRIGGER_LABELS[review.trigger] || review.trigger}
-                          </span>
-                          <span className="text-[var(--text-muted)] text-xs">
-                            第 {review.triggered_at_round} 局后触发
-                          </span>
-                        </div>
-                        {review.self_analysis && (
-                          <p className="text-[var(--text-secondary)]/70 text-xs">{review.self_analysis}</p>
-                        )}
-                        {review.strategy_adjustment && (
-                          <p className="text-[var(--color-gold)]/70 text-xs">
-                            策略调整: {review.strategy_adjustment}
-                          </p>
-                        )}
-                        {Object.keys(review.opponent_patterns).length > 0 && (
-                          <div className="text-xs text-[var(--text-muted)]">
-                            {Object.entries(review.opponent_patterns).map(([name, pattern]) => (
-                              <div key={name} className="mt-1">
-                                <span className="text-[var(--color-primary)]/80">{name}:</span>{' '}
-                                <span className="text-[var(--text-secondary)]/60">{pattern}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </CollapsibleSection>
-              )}
             </div>
           </motion.div>
         )}
 
-        {/* 没有 summary 数据时的提示 */}
-        {isExpanded && !summary && (
+        {/* 经验回顾记录（不依赖 summary，始终可展示） */}
+        {isExpanded && reviews.length > 0 && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="px-5 pb-5 space-y-3">
+              <CollapsibleSection title="策略调整记录" badge={reviews.length} defaultOpen>
+                <div className="space-y-4">
+                  {reviews.map((review, i) => (
+                    <div key={i} className="border-l-2 border-[var(--color-gold)]/30 pl-3 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[var(--color-gold)]/80 text-xs font-medium">
+                          {TRIGGER_LABELS[review.trigger] || review.trigger}
+                        </span>
+                        <span className="text-[var(--text-muted)] text-xs">
+                          第 {review.triggered_at_round} 局后触发
+                        </span>
+                      </div>
+                      {review.self_analysis && (
+                        <p className="text-[var(--text-secondary)]/70 text-xs">{review.self_analysis}</p>
+                      )}
+                      {review.strategy_adjustment && (
+                        <p className="text-[var(--color-gold)]/70 text-xs">
+                          策略调整: {review.strategy_adjustment}
+                        </p>
+                      )}
+                      {Object.keys(review.opponent_patterns).length > 0 && (
+                        <div className="text-xs text-[var(--text-muted)]">
+                          {Object.entries(review.opponent_patterns).map(([name, pattern]) => (
+                            <div key={name} className="mt-1">
+                              <span className="text-[var(--color-primary)]/80">{name}:</span>{' '}
+                              <span className="text-[var(--text-secondary)]/60">{pattern}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CollapsibleSection>
+            </div>
+          </motion.div>
+        )}
+
+        {/* 没有任何数据时的提示 */}
+        {isExpanded && !summary && reviews.length === 0 && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
@@ -305,7 +315,7 @@ export default function AgentSummaryCard({
             className="overflow-hidden"
           >
             <div className="px-5 pb-4 text-sm text-[var(--text-muted)]">
-              暂无总结数据
+              暂无策略调整记录
             </div>
           </motion.div>
         )}
