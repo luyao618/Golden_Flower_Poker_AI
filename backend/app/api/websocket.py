@@ -805,18 +805,56 @@ async def _broadcast_action_result(
     is_fallback: bool = False,
 ) -> None:
     """广播操作结果事件 + 更新后的游戏状态"""
-    await ws_manager.broadcast(
-        game_id,
-        event_player_acted(
-            player_id=player.id,
-            player_name=player.name,
-            action=action.value,
-            amount=result.amount,
-            compare_result=result.compare_result,
-            is_fallback=is_fallback,
-        ),
-    )
+    if action == GameAction.COMPARE and result.compare_result:
+        # 比牌操作：只向比牌双方发送手牌数据，其他人收到脱敏版本
+        cr = result.compare_result
+        compare_player_ids = {cr.get("winner_id"), cr.get("loser_id")}
+
+        # 脱敏版本：移除手牌数据和牌型信息
+        _sensitive_keys = ("winner_cards", "loser_cards", "winner_hand", "loser_hand")
+        sanitized_cr = {k: v for k, v in cr.items() if k not in _sensitive_keys}
+        for k in _sensitive_keys:
+            sanitized_cr[k] = None
+
+        connections = ws_manager.get_connections(game_id)
+        for pid in list(connections):
+            if pid in compare_player_ids:
+                # 比牌双方：发送完整数据
+                event = event_player_acted(
+                    player_id=player.id,
+                    player_name=player.name,
+                    action=action.value,
+                    amount=result.amount,
+                    compare_result=cr,
+                    is_fallback=is_fallback,
+                )
+            else:
+                # 其他玩家：发送脱敏数据（不含手牌）
+                event = event_player_acted(
+                    player_id=player.id,
+                    player_name=player.name,
+                    action=action.value,
+                    amount=result.amount,
+                    compare_result=sanitized_cr,
+                    is_fallback=is_fallback,
+                )
+            await ws_manager.send_to_player(game_id, pid, event)
+    else:
+        # 非比牌操作：正常广播
+        await ws_manager.broadcast(
+            game_id,
+            event_player_acted(
+                player_id=player.id,
+                player_name=player.name,
+                action=action.value,
+                amount=result.amount,
+                compare_result=result.compare_result,
+                is_fallback=is_fallback,
+            ),
+        )
+
     # 广播更新后的游戏状态（筹码、底池、玩家状态等）
+    # broadcast_game_state 已经是按玩家视角过滤的，无需修改
     await ws_manager.broadcast_game_state(game_id, game)
 
 
@@ -880,22 +918,22 @@ async def _handle_round_end(
                         )
                     )
 
-    # 游戏整体结束时，异步生成各 AI 玩家的游戏总结报告
-    # 注：稍作延迟以等待最后一局的叙事生成完成，确保总结能包含所有局的叙事
-    if game.status == "finished" and agent_manager is not None:
-        for player in game.players:
-            if player.player_type != PlayerType.HUMAN:
-                agent = agent_manager.get_agent(game_id, player.id)
-                if agent is not None:
-                    task = asyncio.create_task(
-                        _generate_and_persist_game_summary(
-                            game_id=game_id,
-                            game=game,
-                            agent=agent,
-                            player=player,
-                        )
-                    )
-                    ws_manager.add_summary_task(game_id, task)
+    # NOTE: 游戏总结报告功能暂时禁用（OpenRouter json_object 兼容性问题）
+    # 局叙事（心路历程）功能保留，见上方 _generate_and_persist_narrative 调用
+    # if game.status == "finished" and agent_manager is not None:
+    #     for player in game.players:
+    #         if player.player_type != PlayerType.HUMAN:
+    #             agent = agent_manager.get_agent(game_id, player.id)
+    #             if agent is not None:
+    #                 task = asyncio.create_task(
+    #                     _generate_and_persist_game_summary(
+    #                         game_id=game_id,
+    #                         game=game,
+    #                         agent=agent,
+    #                         player=player,
+    #                     )
+    #                 )
+    #                 ws_manager.add_summary_task(game_id, task)
 
 
 async def _generate_and_persist_narrative(
