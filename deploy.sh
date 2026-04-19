@@ -13,7 +13,7 @@
 set -euo pipefail
 
 # ---- 配置 ----
-REPO_URL="https://github.com/luyao618/llm-golden-flower.git"
+REPO_URL="https://github.com/luyao618/golden-flower.git"
 PROJECT_DIR="$HOME/golden-flower"
 HEALTH_URL="http://localhost/health"
 HEALTH_TIMEOUT=60  # 健康检查最大等待秒数
