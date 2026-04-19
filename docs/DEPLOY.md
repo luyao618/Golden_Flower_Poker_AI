@@ -59,7 +59,7 @@ ssh azureuser@<你的公网IP>
 
 ```bash
 # 下载部署脚本
-curl -fsSL https://raw.githubusercontent.com/luyao618/llm-golden-flower/main/deploy.sh -o deploy.sh
+curl -fsSL https://raw.githubusercontent.com/luyao618/golden-flower/main/deploy.sh -o deploy.sh
 chmod +x deploy.sh
 
 # 执行首次部署（自动安装 Docker、克隆代码、构建启动）
